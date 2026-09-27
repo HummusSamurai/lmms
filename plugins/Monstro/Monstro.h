@@ -38,33 +38,13 @@
 #include "lmms_math.h"
 #include "BandLimitedWave.h"
 
-class ComboBox;
+namespace lmms
+{
 
-//
-//	UI Macros
-//
 
-#define makeknob( name, x, y, hint, unit, oname ) 		\
-	name = new Knob( knobStyled, view ); 				\
-	name ->move( x, y );								\
-	name ->setHintText( hint, unit );             \
-	name ->setObjectName( oname );						\
-	name ->setFixedSize( 20, 20 );
+namespace gui
+{
 
-#define maketsknob( name, x, y, hint, unit, oname ) 		\
-	name = new TempoSyncKnob( knobStyled, view ); 				\
-	name ->move( x, y );								\
-	name ->setHintText( hint, unit );		\
-	name ->setObjectName( oname );						\
-	name ->setFixedSize( 20, 20 );
-
-#define maketinyled( name, x, y, ttip ) \
-	name = new PixmapButton( view, nullptr ); 	\
-	name -> setCheckable( true );			\
-	name -> move( x, y );					\
-	name -> setActiveGraphic( PLUGIN_NAME::getIconPixmap( "tinyled_on" ) ); \
-	name -> setInactiveGraphic( PLUGIN_NAME::getIconPixmap( "tinyled_off" ) ); \
-	name->setToolTip(ttip);
 
 // UI constants
 const int O1ROW = 22;
@@ -107,6 +87,9 @@ const int MATROW6 = 22 + 39*5;
 
 const int OPVIEW = 0;
 const int MATVIEW = 1;
+
+
+} // namespace gui
 
 // waveform enumerators
 const int WAVE_SINE = 0;
@@ -154,24 +137,28 @@ const float PW_MIN = 0.25f;
 const float PW_MAX = 100.0f - PW_MIN;
 
 class MonstroInstrument;
+
+namespace gui
+{
 class MonstroView;
+class ComboBox;
+}
 
 
 class MonstroSynth
 {
-	MM_OPERATORS
 public:
 	MonstroSynth( MonstroInstrument * _i, NotePlayHandle * _nph );
-	virtual ~MonstroSynth();
+	virtual ~MonstroSynth() = default;
 
-	void renderOutput( fpp_t _frames, sampleFrame * _buf );
+	void renderOutput( f_cnt_t _frames, SampleFrame* _buf );
 
 private:
 
 	MonstroInstrument * m_parent;
 	NotePlayHandle * m_nph;
 
-	inline void updateModulators( float * env1, float * env2, float * lfo1, float * lfo2, int frames );
+	inline void updateModulators(float * env1, float * env2, float * lfo1, float * lfo2, f_cnt_t frames);
 
 	// linear interpolation
 /*	inline sample_t interpolate( sample_t s1, sample_t s2, float x )
@@ -197,19 +184,19 @@ private:
 				break;
 			case WAVE_TRI:
 				//return Oscillator::triangleSample( _ph );
-				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::BLTriangle );
+				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::Waveform::BLTriangle );
 				break;
 			case WAVE_SAW:
 				//return Oscillator::sawSample( _ph );
-				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::BLSaw );
+				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::Waveform::BLSaw );
 				break;
 			case WAVE_RAMP:
 				//return Oscillator::sawSample( _ph ) * -1.0;
-				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::BLSaw ) * -1.0;
+				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::Waveform::BLSaw ) * -1.0;
 				break;
 			case WAVE_SQR:
 				//return Oscillator::squareSample( _ph );
-				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::BLSquare );
+				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::Waveform::BLSquare );
 				break;
 			case WAVE_SQRSOFT:
 			{
@@ -222,7 +209,7 @@ private:
 			}
 			case WAVE_MOOG:
 				//return Oscillator::moogSawSample( _ph );
-				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::BLMoog );
+				return BandLimitedWave::oscillate( _ph, _wavelen, BandLimitedWave::Waveform::BLMoog );
 				break;
 			case WAVE_SINABS:
 				return qAbs( Oscillator::sinSample( _ph ) );
@@ -341,21 +328,21 @@ class MonstroInstrument : public Instrument
 
 public:
 	MonstroInstrument( InstrumentTrack * _instrument_track );
-	virtual ~MonstroInstrument();
+	~MonstroInstrument() override = default;
 
-	virtual void playNote( NotePlayHandle * _n,
-						sampleFrame * _working_buffer );
-	virtual void deleteNotePluginData( NotePlayHandle * _n );
+	void playNote( NotePlayHandle * _n,
+						SampleFrame* _working_buffer ) override;
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
-	virtual void saveSettings( QDomDocument & _doc,
-							QDomElement & _this );
-	virtual void loadSettings( const QDomElement & _this );
+	void saveSettings( QDomDocument & _doc,
+							QDomElement & _this ) override;
+	void loadSettings( const QDomElement & _this ) override;
 
-	virtual QString nodeName() const;
+	QString nodeName() const override;
 
-	virtual f_cnt_t desiredReleaseFrames() const;
+	float desiredReleaseTimeMs() const override;
 
-	virtual PluginView * instantiateView( QWidget * _parent );
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 public slots:
 	void updateVolume1();
@@ -419,7 +406,7 @@ protected:
 	f_cnt_t m_lfo2_att;
 
 	sample_rate_t m_samplerate;
-	fpp_t m_fpp;
+	f_cnt_t m_fpp;
 	
 	float m_integrator;
 	float m_fmCorrection;
@@ -564,9 +551,14 @@ private:
 	FloatModel	m_sub3lfo2;
 
 	friend class MonstroSynth;
-	friend class MonstroView;
+	friend class gui::MonstroView;
 
 };
+
+
+namespace gui
+{
+
 
 class MonstroView : public InstrumentViewFixedSize
 {
@@ -574,17 +566,29 @@ class MonstroView : public InstrumentViewFixedSize
 public:
 	MonstroView( Instrument * _instrument,
 					QWidget * _parent );
-	virtual ~MonstroView();
+	~MonstroView() override = default;
 
 protected slots:
 	void updateLayout();
 
 private:
-	virtual void modelChanged();
+	void modelChanged() override;
 
 	void setWidgetBackground( QWidget * _widget, const QString & _pic );
 	QWidget * setupOperatorsView( QWidget * _parent );
 	QWidget * setupMatrixView( QWidget * _parent );
+
+	template<class T = Knob>
+	auto makeKnob(QWidget* view, int x, int y, const QString& hint,
+		const QString& unit, const QString& objName) -> T*
+	{
+		T* knob = new T(KnobType::Styled, view);
+		knob->move(x, y);
+		knob->setHintText(hint, unit);
+		knob->setObjectName(objName);
+		knob->setFixedSize(20, 20);
+		return knob;
+	}
 
 //////////////////////////////////////
 //                                  //
@@ -648,9 +652,9 @@ private:
 	TempoSyncKnob *	m_env2RelKnob;
 	Knob *	m_env2SlopeKnob;
 
-	automatableButtonGroup * m_o23ModGroup;
+	AutomatableButtonGroup * m_o23ModGroup;
 
-	automatableButtonGroup * m_selectedViewGroup;
+	AutomatableButtonGroup * m_selectedViewGroup;
 
 	QWidget * m_operatorsView;
 	QWidget * m_matrixView;
@@ -718,5 +722,9 @@ private:
 
 };
 
+
+} // namespace gui
+
+} // namespace lmms
 
 #endif

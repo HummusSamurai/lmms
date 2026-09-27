@@ -1,6 +1,6 @@
 /*
- * AutomatableButton.cpp - implementation of class automatableButton and
- *                          automatableButtonGroup
+ * AutomatableButton.cpp - implementation of class AutomatableButton and
+ *                         AutomatableButtonGroup
  *
  * Copyright (c) 2006-2011 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  *
@@ -29,8 +29,11 @@
 
 #include "CaptionMenu.h"
 #include "StringPairDrag.h"
+#include "KeyboardShortcuts.h"
 
 
+namespace lmms::gui
+{
 
 AutomatableButton::AutomatableButton( QWidget * _parent,
 						const QString & _name ) :
@@ -109,12 +112,16 @@ void AutomatableButton::contextMenuEvent( QContextMenuEvent * _me )
 void AutomatableButton::mousePressEvent( QMouseEvent * _me )
 {
 	if( _me->button() == Qt::LeftButton &&
-			! ( _me->modifiers() & Qt::ControlModifier ) )
+			! ( _me->modifiers() & KBD_COPY_MODIFIER ) )
 	{
         // User simply clicked, toggle if needed
 		if( isCheckable() )
 		{
 			toggle();
+		}
+		else
+		{
+			model()->setValue(true);
 		}
 		_me->accept();
 	}
@@ -124,7 +131,7 @@ void AutomatableButton::mousePressEvent( QMouseEvent * _me )
 		if( m_group )
 		{
 			// A group, we must get process it instead
-			AutomatableModelView* groupView = (AutomatableModelView*)m_group;
+			auto groupView = (AutomatableModelView*)m_group;
 			new StringPairDrag( "automatable_model",
 					QString::number( groupView->modelUntyped()->id() ),
 					QPixmap(), widget() );
@@ -147,6 +154,10 @@ void AutomatableButton::mouseReleaseEvent( QMouseEvent * _me )
 {
 	if( _me && _me->button() == Qt::LeftButton )
 	{
+		if(!isCheckable())
+		{
+			model()->setValue(false);
+		}
 		emit clicked();
 	}
 }
@@ -176,7 +187,7 @@ void AutomatableButton::toggle()
 
 
 
-automatableButtonGroup::automatableButtonGroup( QWidget * _parent,
+AutomatableButtonGroup::AutomatableButtonGroup( QWidget * _parent,
 						const QString & _name ) :
 	QWidget( _parent ),
 	IntModelView( new IntModel( 0, 0, 0, nullptr, _name, true ), this )
@@ -188,19 +199,18 @@ automatableButtonGroup::automatableButtonGroup( QWidget * _parent,
 
 
 
-automatableButtonGroup::~automatableButtonGroup()
+AutomatableButtonGroup::~AutomatableButtonGroup()
 {
-	for( QList<AutomatableButton *>::iterator it = m_buttons.begin();
-					it != m_buttons.end(); ++it )
+	for (const auto& button : m_buttons)
 	{
-		( *it )->m_group = nullptr;
+		button->m_group = nullptr;
 	}
 }
 
 
 
 
-void automatableButtonGroup::addButton( AutomatableButton * _btn )
+void AutomatableButtonGroup::addButton( AutomatableButton * _btn )
 {
 	_btn->m_group = this;
 	_btn->setCheckable( true );
@@ -217,7 +227,7 @@ void automatableButtonGroup::addButton( AutomatableButton * _btn )
 
 
 
-void automatableButtonGroup::removeButton( AutomatableButton * _btn )
+void AutomatableButtonGroup::removeButton( AutomatableButton * _btn )
 {
 	m_buttons.erase( std::find( m_buttons.begin(), m_buttons.end(), _btn ) );
 	_btn->m_group = nullptr;
@@ -226,7 +236,7 @@ void automatableButtonGroup::removeButton( AutomatableButton * _btn )
 
 
 
-void automatableButtonGroup::activateButton( AutomatableButton * _btn )
+void AutomatableButtonGroup::activateButton( AutomatableButton * _btn )
 {
 	if( _btn != m_buttons[model()->value()] &&
 					m_buttons.indexOf( _btn ) != -1 )
@@ -242,10 +252,10 @@ void automatableButtonGroup::activateButton( AutomatableButton * _btn )
 
 
 
-void automatableButtonGroup::modelChanged()
+void AutomatableButtonGroup::modelChanged()
 {
-	connect( model(), SIGNAL( dataChanged() ),
-			this, SLOT( updateButtons() ) );
+	connect( model(), SIGNAL(dataChanged()),
+			this, SLOT(updateButtons()));
 	IntModelView::modelChanged();
 	updateButtons();
 }
@@ -253,7 +263,7 @@ void automatableButtonGroup::modelChanged()
 
 
 
-void automatableButtonGroup::updateButtons()
+void AutomatableButtonGroup::updateButtons()
 {
 	model()->setRange( 0, m_buttons.size() - 1 );
 	int i = 0;
@@ -266,4 +276,4 @@ void automatableButtonGroup::updateButtons()
 
 
 
-
+} // namespace lmms::gui

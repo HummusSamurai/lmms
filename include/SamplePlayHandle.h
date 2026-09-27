@@ -23,26 +23,28 @@
  *
  */
 
-#ifndef SAMPLE_PLAY_HANDLE_H
-#define SAMPLE_PLAY_HANDLE_H
+#ifndef LMMS_SAMPLE_PLAY_HANDLE_H
+#define LMMS_SAMPLE_PLAY_HANDLE_H
 
-#include "SampleBuffer.h"
-#include "AutomatableModel.h"
+#include "Sample.h"
 #include "PlayHandle.h"
+
+namespace lmms
+{
+
 
 class PatternTrack;
 class SampleClip;
 class Track;
-class AudioPort;
 
 
-class SamplePlayHandle : public PlayHandle
+class LMMS_EXPORT SamplePlayHandle : public PlayHandle
 {
 public:
-	SamplePlayHandle( SampleBuffer* sampleBuffer , bool ownAudioPort = true );
+	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle = true);
 	SamplePlayHandle( const QString& sampleFile );
 	SamplePlayHandle( SampleClip* clip );
-	virtual ~SamplePlayHandle();
+	~SamplePlayHandle() override;
 
 	inline bool affinityMatters() const override
 	{
@@ -50,7 +52,7 @@ public:
 	}
 
 
-	void play( sampleFrame * buffer ) override;
+	void play( SampleFrame* buffer ) override;
 	bool isFinished() const override;
 
 	bool isFromTrack( const Track * _track ) const override;
@@ -70,28 +72,17 @@ public:
 		m_patternTrack = pt;
 	}
 
-	void setVolumeModel( FloatModel * _model )
-	{
-		m_volumeModel = _model;
-	}
-
-
 private:
-	SampleBuffer * m_sampleBuffer;
-	bool m_doneMayReturnTrue;
-
-	f_cnt_t m_frame;
-	SampleBuffer::handleState m_state;
-
-	const bool m_ownAudioPort;
-
-	FloatModel m_defaultVolumeModel;
-	FloatModel * m_volumeModel;
-	Track * m_track;
-
-	PatternTrack* m_patternTrack;
-
+	Sample::PlaybackState m_state;
+	f_cnt_t m_frame = 0;
+	Sample* m_sample = nullptr;
+	Track* m_track = nullptr;
+	PatternTrack* m_patternTrack = nullptr;
+	bool m_doneMayReturnTrue = true;
+	bool m_ownAudioBusHandle = false;
 } ;
 
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_SAMPLE_PLAY_HANDLE_H

@@ -22,14 +22,20 @@
  *
  */
 
-#ifndef AUTOMATION_CLIP_VIEW_H
-#define AUTOMATION_CLIP_VIEW_H
+#ifndef LMMS_GUI_AUTOMATION_CLIP_VIEW_H
+#define LMMS_GUI_AUTOMATION_CLIP_VIEW_H
 
 #include <QStaticText>
 
 #include "ClipView.h"
 
+namespace lmms
+{
+
 class AutomationClip;
+
+namespace gui
+{
 
 
 class AutomationClipView : public ClipView
@@ -39,7 +45,7 @@ class AutomationClipView : public ClipView
 
 public:
 	AutomationClipView( AutomationClip * _clip, TrackView * _parent );
-	virtual ~AutomationClipView();
+	~AutomationClipView() override = default;
 
 public slots:
 	/// Opens this view's clip in the global automation editor
@@ -68,11 +74,16 @@ private:
 	QPixmap m_paintPixmap;
 	
 	QStaticText m_staticTextName;
-	
-	static QPixmap * s_clip_rec;
 
+	//! @brief Preserves the auto points over different scale
 	void scaleTimemapToFit( float oldMin, float oldMax );
+	
+	bool isResizableBeforeStart() override { return false; }
 } ;
 
 
-#endif
+} // namespace gui
+
+} // namespace lmms
+
+#endif // LMMS_GUI_AUTOMATION_CLIP_VIEW_H

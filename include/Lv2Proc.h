@@ -1,7 +1,7 @@
 /*
  * Lv2Proc.h - Lv2 processor class
  *
- * Copyright (c) 2019-2020 Johannes Lorenz <jlsf2013$users.sourceforge.net, $=@>
+ * Copyright (c) 2019-2022 Johannes Lorenz <jlsf2013$users.sourceforge.net, $=@>
  *
  * This file is part of LMMS - https://lmms.io
  *
@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef LV2PROC_H
-#define LV2PROC_H
+#ifndef LMMS_LV2_PROC_H
+#define LMMS_LV2_PROC_H
 
 #include "lmmsconfig.h"
 
@@ -31,16 +31,25 @@
 
 #include <lilv/lilv.h>
 #include <memory>
+#include <optional>
 
+#include <ringbuffer/ringbuffer.h>
+
+#include "LinkedModelGroups.h"
+#include "LmmsSemaphore.h"
 #include "Lv2Basics.h"
 #include "Lv2Features.h"
 #include "Lv2Options.h"
-#include "LinkedModelGroups.h"
+#include "Lv2Worker.h"
 #include "Plugin.h"
-#include "../src/3rdparty/ringbuffer/include/ringbuffer/ringbuffer.h"
 #include "TimePos.h"
 
+
+namespace lmms
+{
+
 class PluginIssue;
+class SampleFrame;
 
 // forward declare port structs/enums
 namespace Lv2Ports
@@ -48,28 +57,25 @@ namespace Lv2Ports
 	struct Audio;
 	struct PortBase;
 	struct AtomSeq;
-
-	enum class Type;
-	enum class Flow;
-	enum class Vis;
 }
 
 
-//! Class representing one Lv2 processor, i.e. one Lv2 handle
-//! For Mono effects, 1 Lv2ControlBase references 2 Lv2Proc
+//! Class representing one Lv2 processor, i.e. one Lv2 handle.
+//! For Mono effects, 1 Lv2ControlBase references 2 Lv2Proc.
 class Lv2Proc : public LinkedModelGroup
 {
+	friend class Lv2ProcSuspender;
 public:
-	static Plugin::PluginTypes check(const LilvPlugin* plugin,
+	static Plugin::Type check(const LilvPlugin* plugin,
 		std::vector<PluginIssue> &issues);
 
 	/*
-		ctor/dtor
+		ctor/dtor/reload
 	*/
 	Lv2Proc(const LilvPlugin* plugin, Model *parent);
 	~Lv2Proc() override;
-	//! Must be checked after ctor or reload
-	bool isValid() const { return m_valid; }
+	void reload();
+	void onSampleRateChanged();
 
 	/*
 		port access
@@ -109,39 +115,36 @@ public:
 	/*
 		utils for the run thread
 	*/
-	//! Copy values from the LMMS core (connected models, MIDI events, ...) into
+
+	//! @brief Copy values from the LMMS core (connected models, MIDI events, ...) into
 	//! the respective ports
 	void copyModelsFromCore();
-	//! Bring values from all ports to the LMMS core
+
+	//! @brief Bring values from all ports to the LMMS core
 	void copyModelsToCore();
-	/**
-	 * Copy buffer passed by the core into our ports
-	 * @param buf buffer of sample frames, each sample frame is something like
-	 *   a `float[<number-of-procs> * <channels per proc>]` array.
-	 * @param firstChan The offset for @p buf where we have to read our
-	 *   first channel.
-	 *   This marks the first sample in each sample frame where we read from.
-	 *   If we are the 2nd of 2 mono procs, this can be greater than 0.
-	 * @param num Number of channels we must read from @param buf (starting at
-	 *   @p offset)
-	 */
-	void copyBuffersFromCore(const sampleFrame *buf,
-								unsigned firstChan, unsigned num, fpp_t frames);
-	/**
-	 * Copy our ports into buffers passed by the core
-	 * @param buf buffer of sample frames, each sample frame is something like
-	 *   a `float[<number-of-procs> * <channels per proc>]` array.
-	 * @param firstChan The offset for @p buf where we have to write our
-	 *   first channel.
-	 *   This marks the first sample in each sample frame where we write to.
-	 *   If we are the 2nd of 2 mono procs, this can be greater than 0.
-	 * @param num Number of channels we must write to @param buf (starting at
-	 *   @p offset)
-	 */
-	void copyBuffersToCore(sampleFrame *buf, unsigned firstChan, unsigned num,
-								fpp_t frames) const;
-	//! Run the Lv2 plugin instance for @param frames frames
-	void run(fpp_t frames);
+
+	//! @brief Copy buffer passed by the core into our ports
+	//! @param buf buffer of sample frames, each sample frame is something like a
+	//! `float[<number-of-procs> * <channels per proc>]` array.
+	//! @param firstChan The offset for @p buf where we have to read our first channel.
+	//! This marks the first sample in each sample frame where we read from.
+	//! If we are the 2nd of 2 mono procs, this can be greater than 0.
+	//! @param num Number of channels we must read from @p buf (starting at @p offset)
+	//! @param frames The length of @p buf
+	void copyBuffersFromCore(const SampleFrame* buf, unsigned firstChan, unsigned num, f_cnt_t frames);
+
+	//! @brief Copy our ports into buffers passed by the core
+	//! @param buf buffer of sample frames, each sample frame is something like a
+	//! `float[<number-of-procs> * <channels per proc>]` array.
+	//! @param firstChan The offset for @p buf where we have to write our first channel.
+	//! This marks the first sample in each sample frame where we write to.
+	//! If we are the 2nd of 2 mono procs, this can be greater than 0.
+	//! @param num Number of channels we must write to @p buf (starting at @p offset)
+	void copyBuffersToCore(SampleFrame* buf, unsigned firstChan, unsigned num, f_cnt_t frames) const;
+
+	//! @brief Run the Lv2 plugin instance for @p frames frames
+	//! @param frames The number of frames to run
+	void run(f_cnt_t frames);
 
 	void handleMidiInputEvent(const class MidiEvent &event,
 		const TimePos &time, f_cnt_t offset);
@@ -163,12 +166,16 @@ protected:
 	void shutdownPlugin();
 
 private:
-	bool m_valid = true;
-
 	const LilvPlugin* m_plugin;
-	LilvInstance* m_instance;
+	LilvInstance* m_instance = nullptr;
 	Lv2Features m_features;
+
+	// options
 	Lv2Options m_options;
+
+	// worker
+	std::optional<Lv2Worker> m_worker;
+	Semaphore m_workLock; // this must be shared by different workers
 
 	// full list of ports
 	std::vector<std::unique_ptr<Lv2Ports::PortBase>> m_ports;
@@ -191,6 +198,8 @@ private:
 	static int32_t defaultEvbufSize() { return 1 << 15; /* ardour uses this*/ }
 
 	//! models for the controls, sorted by port symbols
+	//! @note These are not owned, but rather link to the models in
+	//!   ControlPorts in `m_ports`
 	std::map<std::string, AutomatableModel *> m_connectedModels;
 
 	void initMOptions(); //!< initialize m_options
@@ -212,5 +221,9 @@ private:
 	static AutoLilvNode uri(const char* uriStr);
 };
 
+
+} // namespace lmms
+
 #endif // LMMS_HAVE_LV2
-#endif // LV2PROC_H
+
+#endif // LMMS_LV2_PROC_H

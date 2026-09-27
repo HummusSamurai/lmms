@@ -24,9 +24,10 @@
 #include <ColorChooser.h>
 
 
+namespace lmms::gui
+{
 
 
-//! Set global palette via array, checking bounds
 void ColorChooser::setPalette (QVector<QColor> colors)
 {
 	const int max = qMin (colors.size(), 48);
@@ -37,14 +38,12 @@ void ColorChooser::setPalette (QVector<QColor> colors)
 }
 
 
-//! Set global paletter via enum
 void ColorChooser::setPalette (Palette palette)
 {
 	setPalette (getPalette (palette));
 }
 
 
-//! Set palette via enum, return self pointer for chaining
 ColorChooser* ColorChooser::withPalette (Palette palette)
 {
 	setPalette (palette);
@@ -52,7 +51,6 @@ ColorChooser* ColorChooser::withPalette (Palette palette)
 }
 
 
-//! Return a certain palette
 QVector<QColor> ColorChooser::getPalette (Palette palette)
 {
 	switch (palette)
@@ -64,9 +62,6 @@ QVector<QColor> ColorChooser::getPalette (Palette palette)
 }
 
 
-
-
-//! Copy the current QColorDialog palette into an array
 QVector<QColor> ColorChooser::defaultPalette()
 {
 	QVector <QColor> result (48);
@@ -78,7 +73,6 @@ QVector<QColor> ColorChooser::defaultPalette()
 }
 
 
-//! Generate a nice palette, with adjustable value
 QVector<QColor> ColorChooser::nicePalette (int base)
 {
 	QVector <QColor> result (48);
@@ -91,3 +85,6 @@ QVector<QColor> ColorChooser::nicePalette (int base)
 	}
 	return result;
 }
+
+
+} // namespace lmms::gui

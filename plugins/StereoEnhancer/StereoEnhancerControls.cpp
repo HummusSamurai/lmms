@@ -23,10 +23,12 @@
  */
 
 
-#include <QDomElement>
 
 #include "StereoEnhancerControls.h"
 #include "StereoEnhancer.h"
+
+namespace lmms
+{
 
 
 StereoEnhancerControls::StereoEnhancerControls( StereoEnhancerEffect * _eff ) :
@@ -64,6 +66,4 @@ void StereoEnhancerControls::saveSettings( QDomDocument & _doc,
 }
 
 
-
-
-
+} // namespace lmms

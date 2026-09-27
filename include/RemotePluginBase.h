@@ -22,54 +22,30 @@
  *
  */
 
-#ifndef REMOTE_PLUGIN_BASE_H
-#define REMOTE_PLUGIN_BASE_H
+#ifndef LMMS_REMOTE_PLUGIN_BASE_H
+#define LMMS_REMOTE_PLUGIN_BASE_H
 
-#include "MidiEvent.h"
-#include "VstSyncData.h"
-
-#include <atomic>
+#include <atomic>  // IWYU pragma: keep
 #include <vector>
+#include <clocale> // IWYU pragma: keep
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <cassert>
+
+#include "lmmsconfig.h"
 
 #if !(defined(LMMS_HAVE_SYS_IPC_H) && defined(LMMS_HAVE_SEMAPHORE_H))
 #define SYNC_WITH_SHM_FIFO
-#define USE_QT_SEMAPHORES
 
 #ifdef LMMS_HAVE_PROCESS_H
 #include <process.h>
 #endif
-
-#include <QtGlobal>
-#include <QSystemSemaphore>
-#endif
-
-
-#ifdef LMMS_HAVE_SYS_SHM_H
-#include <sys/shm.h>
-
+#else // !(LMMS_HAVE_SYS_IPC_H && LMMS_HAVE_SEMAPHORE_H)
 #ifdef LMMS_HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#else
-#define USE_QT_SHMEM
-
-#include <QtGlobal>
-#include <QSharedMemory>
-
-#if !defined(LMMS_HAVE_SYS_TYPES_H) || defined(LMMS_BUILD_WIN32)
-typedef int32_t key_t;
-#endif
-#endif
-
-
-#ifdef LMMS_HAVE_LOCALE_H
-#include <clocale>
-#endif
+#endif // !(LMMS_HAVE_SYS_IPC_H && LMMS_HAVE_SEMAPHORE_H)
 
 #ifdef LMMS_HAVE_PTHREAD_H
 #include <pthread.h>
@@ -83,23 +59,31 @@ typedef int32_t key_t;
 #ifndef SYNC_WITH_SHM_FIFO
 #include <sys/socket.h>
 #include <sys/un.h>
-#endif
+#endif // SYNC_WITH_SHM_FIFO
 
-#else
+#else // BUILD_REMOTE_PLUGIN_CLIENT
 #include "lmms_export.h"
-#include <QMutex>
-#include <QProcess>
-#include <QThread>
 #include <QString>
 
 #ifndef SYNC_WITH_SHM_FIFO
 #include <poll.h>
-#include <unistd.h>
-#endif
+#include <unistd.h>  // IWYU pragma: keep
+#endif // SYNC_WITH_SHM_FIFO
 
-#endif
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 
 #ifdef SYNC_WITH_SHM_FIFO
+#include "SharedMemory.h"
+#include "SystemSemaphore.h"
+#endif
+
+namespace lmms
+{
+
+
+#ifdef SYNC_WITH_SHM_FIFO
+
+
 // sometimes we need to exchange bigger messages (e.g. for VST parameter dumps)
 // so set a usable value here
 const int SHM_FIFO_SIZE = 512*1024;
@@ -120,99 +104,39 @@ class shmFifo
 		sem32_t dataSem;	// semaphore for locking this
 					// FIFO management data
 		sem32_t messageSem;	// semaphore for incoming messages
-		volatile int32_t startPtr; // current start of FIFO in memory
-		volatile int32_t endPtr;   // current end of FIFO in memory
+		int32_t startPtr; // current start of FIFO in memory
+		int32_t endPtr;   // current end of FIFO in memory
 		char data[SHM_FIFO_SIZE];  // actual data
 	} ;
 
 public:
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	// constructor for master-side
 	shmFifo() :
 		m_invalid( false ),
 		m_master( true ),
-		m_shmKey( 0 ),
-#ifdef USE_QT_SHMEM
-		m_shmObj(),
-#else
-		m_shmID( -1 ),
-#endif
-		m_data( nullptr ),
-		m_dataSem( QString() ),
-		m_messageSem( QString() ),
 		m_lockDepth( 0 )
 	{
-#ifdef USE_QT_SHMEM
-		do
-		{
-			m_shmObj.setKey( QString( "%1" ).arg( ++m_shmKey ) );
-			m_shmObj.create( sizeof( shmData ) );
-		} while( m_shmObj.error() != QSharedMemory::NoError );
-
-		m_data = (shmData *) m_shmObj.data();
-#else
-		while( ( m_shmID = shmget( ++m_shmKey, sizeof( shmData ),
-					IPC_CREAT | IPC_EXCL | 0600 ) ) == -1 )
-		{
-		}
-		m_data = (shmData *) shmat( m_shmID, 0, 0 );
-#endif
-		assert( m_data != nullptr );
+		m_data.create();
 		m_data->startPtr = m_data->endPtr = 0;
 		static int k = 0;
 		m_data->dataSem.semKey = ( getpid()<<10 ) + ++k;
 		m_data->messageSem.semKey = ( getpid()<<10 ) + ++k;
-		m_dataSem.setKey( QString::number( m_data->dataSem.semKey ),
-						1, QSystemSemaphore::Create );
-		m_messageSem.setKey( QString::number(
-						m_data->messageSem.semKey ),
-						0, QSystemSemaphore::Create );
+		m_dataSem = SystemSemaphore{std::to_string(m_data->dataSem.semKey), 1u};
+		m_messageSem = SystemSemaphore{std::to_string(m_data->messageSem.semKey), 0u};
 	}
+#endif
 
 	// constructor for remote-/client-side - use _shm_key for making up
 	// the connection to master
-	shmFifo( key_t _shm_key ) :
+	shmFifo(const std::string& shmKey) :
 		m_invalid( false ),
 		m_master( false ),
-		m_shmKey( 0 ),
-#ifdef USE_QT_SHMEM
-		m_shmObj( QString::number( _shm_key ) ),
-#else
-		m_shmID( shmget( _shm_key, 0, 0 ) ),
-#endif
-		m_data( nullptr ),
-		m_dataSem( QString() ),
-		m_messageSem( QString() ),
 		m_lockDepth( 0 )
 	{
-#ifdef USE_QT_SHMEM
-		if( m_shmObj.attach() )
-		{
-			m_data = (shmData *) m_shmObj.data();
-		}
-#else
-		if( m_shmID != -1 )
-		{
-			m_data = (shmData *) shmat( m_shmID, 0, 0 );
-		}
-#endif
-		assert( m_data != nullptr );
-		m_dataSem.setKey( QString::number( m_data->dataSem.semKey ) );
-		m_messageSem.setKey( QString::number(
-						m_data->messageSem.semKey ) );
-	}
-
-	~shmFifo()
-	{
-		// master?
-		if( m_master )
-		{
-#ifndef USE_QT_SHMEM
-			shmctl( m_shmID, IPC_RMID, nullptr );
-#endif
-		}
-#ifndef USE_QT_SHMEM
-		shmdt( m_data );
-#endif
+		m_data.attach(shmKey);
+		m_dataSem = SystemSemaphore{std::to_string(m_data->dataSem.semKey)};
+		m_messageSem = SystemSemaphore{std::to_string(m_data->messageSem.semKey)};
 	}
 
 	inline bool isInvalid() const
@@ -277,19 +201,17 @@ public:
 		write( &_i, sizeof( _i ) );
 	}
 
-	inline std::string readString()
+	std::string readString()
 	{
+		std::string ret;
 		const int len = readInt();
-		if( len )
+		if (len > 0)
 		{
-			char * sc = new char[len + 1];
-			read( sc, len );
-			sc[len] = 0;
-			std::string s( sc );
-			delete[] sc;
-			return s;
+			ret.resize(static_cast<std::size_t>(len));
+			read(ret.data(), len);
+			ret[len] = '\0';
 		}
-		return std::string();
+		return ret;
 	}
 
 
@@ -314,27 +236,13 @@ public:
 	}
 
 
-	inline int shmKey() const
+	const std::string& shmKey() const
 	{
-		return m_shmKey;
+		return m_data.key();
 	}
 
 
 private:
-	static inline void fastMemCpy( void * _dest, const void * _src,
-							const int _len )
-	{
-		// calling memcpy() for just an integer is obsolete overhead
-		if( _len == 4 )
-		{
-			*( (int32_t *) _dest ) = *( (int32_t *) _src );
-		}
-		else
-		{
-			memcpy( _dest, _src, _len );
-		}
-	}
-
 	void read( void * _buf, int _len )
 	{
 		if( isInvalid() )
@@ -352,7 +260,7 @@ private:
 #endif
 			lock();
 		}
-		fastMemCpy( _buf, m_data->data + m_data->startPtr, _len );
+		std::memcpy(_buf, m_data->data + m_data->startPtr, _len);
 		m_data->startPtr += _len;
 		// nothing left?
 		if( m_data->startPtr == m_data->endPtr )
@@ -388,26 +296,19 @@ private:
 #endif
 			lock();
 		}
-		fastMemCpy( m_data->data + m_data->endPtr, _buf, _len );
+		std::memcpy(m_data->data + m_data->endPtr, _buf, _len);
 		m_data->endPtr += _len;
 		unlock();
 	}
 
 	volatile bool m_invalid;
 	bool m_master;
-	key_t m_shmKey;
-#ifdef USE_QT_SHMEM
-	QSharedMemory m_shmObj;
-#else
-	int m_shmID;
-#endif
-	shmData * m_data;
-	QSystemSemaphore m_dataSem;
-	QSystemSemaphore m_messageSem;
+	SharedMemory<shmData> m_data;
+	SystemSemaphore m_dataSem;
+	SystemSemaphore m_messageSem;
 	std::atomic_int m_lockDepth;
-
-} ;
-#endif
+};
+#endif // SYNC_WITH_SHM_FIFO
 
 
 
@@ -417,6 +318,7 @@ enum RemoteMessageIDs
 	IdHostInfoGotten,
 	IdInitDone,
 	IdQuit,
+	IdSyncKey,
 	IdSampleRateInformation,
 	IdBufferSizeInformation,
 	IdInformationUpdated,
@@ -455,11 +357,7 @@ public:
 		{
 		}
 
-		message( const message & _m ) :
-			id( _m.id ),
-			data( _m.data )
-		{
-		}
+		message( const message & _m ) = default;
 
 		message( int _id ) :
 			id( _id ),
@@ -467,25 +365,26 @@ public:
 		{
 		}
 
-		inline message & addString( const std::string & _s )
+		template<class... Args>
+		message& addString(Args&&... args)
 		{
-			data.push_back( _s );
+			data.emplace_back(std::forward<Args>(args)...);
 			return *this;
 		}
 
 		message & addInt( int _i )
 		{
 			char buf[32];
-			sprintf( buf, "%d", _i );
-			data.push_back( std::string( buf ) );
+			std::snprintf(buf, 32, "%d", _i);
+			data.emplace_back( buf );
 			return *this;
 		}
 
 		message & addFloat( float _f )
 		{
 			char buf[32];
-			sprintf( buf, "%f", _f );
-			data.push_back( std::string( buf ) );
+			std::snprintf(buf, 32, "%f", _f);
+			data.emplace_back( buf );
 			return *this;
 		}
 
@@ -577,19 +476,17 @@ public:
 		write( &_i, sizeof( _i ) );
 	}
 
-	inline std::string readString()
+	std::string readString()
 	{
+		std::string ret;
 		const int len = readInt();
-		if( len )
+		if (len > 0)
 		{
-			char * sc = new char[len + 1];
-			read( sc, len );
-			sc[len] = 0;
-			std::string s( sc );
-			delete[] sc;
-			return s;
+			ret.resize(static_cast<std::size_t>(len));
+			read(ret.data(), len);
+			ret[len] = '\0';
 		}
-		return std::string();
+		return ret;
 	}
 
 
@@ -599,7 +496,7 @@ public:
 		writeInt( len );
 		write( _s.c_str(), len );
 	}
-#endif
+#endif // SYNC_WITH_SHM_FIFO
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	inline bool messagesLeft()
@@ -631,7 +528,7 @@ public:
 	{
 		return waitDepthCounter() > 0;
 	}
-#endif
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 
 	virtual bool processMessage( const message & _m ) = 0;
 
@@ -736,8 +633,10 @@ private:
 
 	pthread_mutex_t m_receiveMutex;
 	pthread_mutex_t m_sendMutex;
-#endif
+#endif // SYNC_WITH_SHM_FIFO
 
 } ;
 
-#endif // REMOTE_PLUGIN_BASE_H
+} // namespace lmms
+
+#endif // LMMS_REMOTE_PLUGIN_BASE_H

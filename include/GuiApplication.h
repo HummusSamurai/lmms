@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef GUIAPPLICATION_H
-#define GUIAPPLICATION_H
+#ifndef LMMS_GUI_GUI_APPLICATION_H
+#define LMMS_GUI_GUI_APPLICATION_H
 
 #include <QObject>
 
@@ -31,6 +31,10 @@
 #include "lmmsconfig.h"
 
 class QLabel;
+class QSocketNotifier;
+
+namespace lmms::gui
+{
 
 class AutomationEditorWindow;
 class ControllerRackView;
@@ -47,12 +51,25 @@ class LMMS_EXPORT GuiApplication : public QObject
 	Q_OBJECT;
 public:
 	explicit GuiApplication();
-	~GuiApplication();
+	~GuiApplication() override;
 
 	static GuiApplication* instance();
+
+	//! @brief Called from main when SIGINT is fired
+	//!
+	//! Unix signal handlers can only call async-signal-safe functions:
+	//! `write(fd)` -> `QSocketNotifier` -> `SLOT sigintOccurred()`
+	//!
+	//! @see https://doc.qt.io/qt-6/unix-signals.html
+	static void sigintHandler(int);
+
+	static bool isWayland();
 #ifdef LMMS_BUILD_WIN32
+	//! @brief Returns the Windows System font.
 	static QFont getWin32SystemFont();
 #endif
+
+	void createSocketNotifier();
 
 	MainWindow* mainWindow() { return m_mainWindow; }
 	MixerView* mixerView() { return m_mixerView; }
@@ -64,11 +81,15 @@ public:
 	AutomationEditorWindow* automationEditor() { return m_automationEditor; }
 	ControllerRackView* getControllerRackView() { return m_controllerRackView; }
 
+	//! File descriptors for unix socketpair, used to receive SIGINT
+	static inline int s_sigintFd[2];
+
 public slots:
 	void displayInitProgress(const QString &msg);
 
 private slots:
 	void childDestroyed(QObject *obj);
+	void sigintOccurred();
 
 private:
 	static GuiApplication* s_instance;
@@ -83,9 +104,12 @@ private:
 	MicrotunerConfig* m_microtunerConfig;
 	ControllerRackView* m_controllerRackView;
 	QLabel* m_loadingProgressLabel;
+	QSocketNotifier* m_sigintNotifier;
 };
 
 // Short-hand function
 LMMS_EXPORT GuiApplication* getGUI();
 
-#endif // GUIAPPLICATION_H
+} // namespace lmms::gui
+
+#endif // LMMS_GUI_GUI_APPLICATION_H

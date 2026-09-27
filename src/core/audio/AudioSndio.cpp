@@ -28,25 +28,23 @@
 #ifdef LMMS_HAVE_SNDIO
 
 #include <cstdlib>
-#include <QLabel>
+#include <QFormLayout>
 #include <QLineEdit>
 
 #include "endian_handling.h"
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
-#include "Engine.h"
-#include "gui_templates.h"
 
 #include "ConfigManager.h"
 
 
+namespace lmms
+{
 
-AudioSndio::AudioSndio(bool & _success_ful, AudioEngine * _audioEngine) :
-	AudioDevice( qBound<ch_cnt_t>(
-		DEFAULT_CHANNELS,
-		ConfigManager::inst()->value( "audiosndio", "channels" ).toInt(),
-		SURROUND_CHANNELS ), _audioEngine ),
-	m_convertEndian ( false )
+AudioSndio::AudioSndio(bool& _success_ful, AudioEngine* _audioEngine)
+	: AudioDevice(std::clamp<ch_cnt_t>(ConfigManager::inst()->value("audiosndio", "channels").toInt(), DEFAULT_CHANNELS,
+					  DEFAULT_CHANNELS),
+		  _audioEngine)
 {
 	_success_ful = false;
 
@@ -70,16 +68,12 @@ AudioSndio::AudioSndio(bool & _success_ful, AudioEngine * _audioEngine) :
 	sio_initpar(&m_par);
 
 	m_par.pchan = channels();
-	m_par.bits = 16;
+	m_par.bits = sizeof(int_sample_t) * 8;
+	m_par.sig = 1; // int_sample_t must be signed
 	m_par.le = SIO_LE_NATIVE;
 	m_par.rate = sampleRate();
-	m_par.round = audioEngine()->framesPerPeriod();
+	m_par.round = audioEngine()->framesPerAudioBuffer();
 	m_par.appbufsz = m_par.round * 2;
-
-	if ( (isLittleEndian() && (m_par.le == 0)) ||
-	     (!isLittleEndian() && (m_par.le == 1))) {
-		m_convertEndian = true;
-	}
 
 	struct sio_par reqpar = m_par;
 
@@ -115,7 +109,6 @@ AudioSndio::AudioSndio(bool & _success_ful, AudioEngine * _audioEngine) :
 
 AudioSndio::~AudioSndio()
 {
-	stopProcessing();
 	if (m_hdl != nullptr)
 	{
 		sio_close( m_hdl );
@@ -124,91 +117,65 @@ AudioSndio::~AudioSndio()
 }
 
 
-void AudioSndio::startProcessing( void )
+void AudioSndio::startProcessingImpl()
 {
-	if( !isRunning() )
-	{
-		start( QThread::HighPriority );
-	}
+	start(QThread::HighPriority);
 }
 
 
-void AudioSndio::stopProcessing( void )
+void AudioSndio::stopProcessingImpl()
 {
 	stopProcessingThread( this );
 }
 
-
-void AudioSndio::applyQualitySettings( void )
+void AudioSndio::run()
 {
-	if( hqAudio() )
+	const auto framesPerAudioBuffer = audioEngine()->framesPerAudioBuffer();
+	const auto samplesPerAudioBuffer = framesPerAudioBuffer * channels();
+	auto fbuf = std::vector<sample_t>(samplesPerAudioBuffer);
+	auto ibuf = std::vector<int_sample_t>(samplesPerAudioBuffer);
+
+	while (AudioDevice::isRunning())
 	{
-		setSampleRate( Engine::audioEngine()->processingSampleRate() );
+		audioEngine()->renderNextBuffer({fbuf.data(), channels(), framesPerAudioBuffer});
 
-		/* change sample rate to sampleRate() */
-	}
-
-	AudioDevice::applyQualitySettings();
-}
-
-
-void AudioSndio::run( void )
-{
-	surroundSampleFrame * temp = new surroundSampleFrame[audioEngine()->framesPerPeriod()];
-	int_sample_t * outbuf = new int_sample_t[audioEngine()->framesPerPeriod() * channels()];
-
-	while( true )
-	{
-		const fpp_t frames = getNextBuffer( temp );
-		if( !frames )
+		// Sndio doesn't speak float, so convert samples to signed int.
+		// While convertToS16() exists, it is intentionally not used
+		// here. There is no need to convert endian-ness since sndio was
+		// initialized with SIO_LE_NATIVE, and there's no reason to
+		// also convert to SampleFrame.
+		for (auto i = 0u; i < samplesPerAudioBuffer; ++i)
 		{
-			break;
+			ibuf[i] = static_cast<int_sample_t>(AudioEngine::clip(fbuf[i]) * OUTPUT_SAMPLE_MULTIPLIER);
 		}
 
-		uint bytes = convertToS16( temp, frames,
-		    audioEngine()->masterGain(), outbuf, m_convertEndian );
-		if( sio_write( m_hdl, outbuf, bytes ) != bytes )
-		{
-			break;
-		}
+		sio_write(m_hdl, ibuf.data(), ibuf.size() * sizeof(int_sample_t));
 	}
-
-	delete[] temp;
-	delete[] outbuf;
 }
 
 
 AudioSndio::setupWidget::setupWidget( QWidget * _parent ) :
 	AudioDeviceSetupWidget( AudioSndio::name(), _parent )
 {
+	QFormLayout * form = new QFormLayout(this);
+
 	m_device = new QLineEdit( "", this );
-	m_device->setGeometry( 10, 20, 160, 20 );
+	form->addRow(tr("Device"), m_device);
 
-	QLabel * dev_lbl = new QLabel( tr( "Device" ), this );
-	dev_lbl->setFont( pointSize<6>( dev_lbl->font() ) );
-	dev_lbl->setGeometry( 10, 40, 160, 10 );
-
-	LcdSpinBoxModel * m = new LcdSpinBoxModel( /* this */ );	
-	m->setRange( DEFAULT_CHANNELS, SURROUND_CHANNELS );
+	gui::LcdSpinBoxModel * m = new gui::LcdSpinBoxModel( /* this */ );
+	m->setRange(DEFAULT_CHANNELS, DEFAULT_CHANNELS);
 	m->setStep( 2 );
 	m->setValue( ConfigManager::inst()->value( "audiosndio",
 	    "channels" ).toInt() );
 
-	m_channels = new LcdSpinBox( 1, this );
+	m_channels = new gui::LcdSpinBox( 1, this );
 	m_channels->setModel( m );
-	m_channels->setLabel( tr( "Channels" ) );
-	m_channels->move( 180, 20 );
 
+	form->addRow(tr("Channels"), m_channels);
 }
 
 
-AudioSndio::setupWidget::~setupWidget()
-{
-
-}
-
-
-void AudioSndio::setupWidget::saveSettings( void )
+void AudioSndio::setupWidget::saveSettings()
 {
 	ConfigManager::inst()->setValue( "audiosndio", "device",
 	    m_device->text() );
@@ -217,4 +184,6 @@ void AudioSndio::setupWidget::saveSettings( void )
 }
 
 
-#endif	/* LMMS_HAVE_SNDIO */
+} // namespace lmms
+
+#endif	// LMMS_HAVE_SNDIO

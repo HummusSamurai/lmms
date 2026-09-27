@@ -70,15 +70,19 @@
 **
 ****************************************************************************/
 
-#ifndef CONTROLLAYOUT_H
-#define CONTROLLAYOUT_H
+#ifndef LMMS_GUI_CONTROL_LAYOUT_H
+#define LMMS_GUI_CONTROL_LAYOUT_H
 
 #include <QLayout>
 #include <QMultiMap>
 #include <QStyle>
+
 class QLayoutItem;
-class QRect;
-class QString;
+class QLineEdit;
+
+
+namespace lmms::gui
+{
 
 /**
 	Layout for controls (models)
@@ -91,6 +95,8 @@ class QString;
 class ControlLayout : public QLayout
 {
 	Q_OBJECT
+
+	using ControlLayoutMap = QMap<QString, QLayoutItem*>;
 
 public:
 	explicit ControlLayout(QWidget *parent,
@@ -120,17 +126,19 @@ private slots:
 private:
 	int doLayout(const QRect &rect, bool testOnly) const;
 	int smartSpacing(QStyle::PixelMetric pm) const;
-	QMap<QString, QLayoutItem *>::const_iterator pairAt(int index) const;
+	ControlLayoutMap::const_iterator pairAt(int index) const;
 
-	QMultiMap<QString, QLayoutItem *> m_itemMap;
+	ControlLayoutMap m_itemMap;
 	int m_hSpace;
 	int m_vSpace;
 	// relevant dimension is width, as later, heightForWidth() will be called
 	// 400 looks good and is ~4 knobs in a row
 	constexpr const static int m_minWidth = 400;
-	class QLineEdit* m_searchBar;
+	QLineEdit* m_searchBar;
 	//! name of search bar, must be ASCII sorted before any alpha numerics
 	static constexpr const char* s_searchBarName = "!!searchBar!!";
 };
 
-#endif // CONTROLLAYOUT_H
+} // namespace lmms::gui
+
+#endif // LMMS_GUI_CONTROL_LAYOUT_H

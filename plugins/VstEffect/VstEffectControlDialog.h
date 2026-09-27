@@ -29,13 +29,18 @@
 
 #include <QSharedPointer>
 
+class QPushButton;
+class QLabel;
+
+namespace lmms
+{
 
 class VstEffectControls;
 class VstPlugin;
-class PixmapButton;
-class QLabel;
-class QPixmap;
-class QPushButton;
+
+namespace gui
+{
+
 class PixmapButton;
 
 
@@ -44,7 +49,7 @@ class VstEffectControlDialog : public EffectControlDialog
 	Q_OBJECT
 public:
 	VstEffectControlDialog( VstEffectControls * _controls );
-	virtual ~VstEffectControlDialog();
+	~VstEffectControlDialog() override;
 
 protected:
 	void paintEvent( QPaintEvent * _pe ) override;
@@ -55,8 +60,8 @@ private:
 
 	QPushButton * m_togglePluginButton;
 	PixmapButton * m_openPresetButton;
-	PixmapButton * m_rolLPresetButton;
-	PixmapButton * m_rolRPresetButton;
+	QPushButton* m_rolLPresetButton;
+	QPushButton* m_rolRPresetButton;
 	PixmapButton * m_managePluginButton;
 	PixmapButton * m_savePresetButton;
 
@@ -67,5 +72,10 @@ private:
 public slots:
 	void togglePluginUI( bool checked );
 } ;
+
+
+} // namespace gui
+
+} // namespace lmms
 
 #endif

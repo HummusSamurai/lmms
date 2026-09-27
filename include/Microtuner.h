@@ -22,12 +22,15 @@
  *
  */
 
-#ifndef MICROTUNER_H
-#define MICROTUNER_H
+#ifndef LMMS_MICROTUNER_H
+#define LMMS_MICROTUNER_H
 
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "JournallingObject.h"
+
+namespace lmms
+{
 
 class LMMS_EXPORT Microtuner : public Model, public JournallingObject
 {
@@ -50,14 +53,25 @@ public:
 	int baseKey() const;
 	float baseFreq() const;
 
+	//! @brief Return frequency for a given MIDI key, using the active mapping and scale.
+	//! @param key A MIDI key number ranging from 0 to 127.
+	//! @param userBaseNote The "A4" or "440 Hz" equivalent "base note". @see InstrumentTrack::baseNoteModel
+	//! @return Frequency in Hz; 0 if key is out of range or not mapped.
 	float keyToFreq(int key, int userBaseNote) const;
+
+	int octaveSize() const;
 
 	QString nodeName() const override {return "microtuner";}
 	void saveSettings(QDomDocument & document, QDomElement &element) override;
 	void loadSettings(const QDomElement &element) override;
 
 protected slots:
+	//! @brief Update scale name displayed in the microtuner scale list.
+	//! @param index Index of the scale to update; update all scales if -1 or out of range.
 	void updateScaleList(int index);
+
+	//! @brief Update keymap name displayed in the microtuner scale list.
+	//! @param index Index of the keymap to update; update all keymaps if -1 or out of range.
 	void updateKeymapList(int index);
 
 private:
@@ -68,4 +82,6 @@ private:
 
 };
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_MICROTUNER_H

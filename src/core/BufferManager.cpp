@@ -26,39 +26,30 @@
 
 #include "BufferManager.h"
 
-#include <cstring>
+#include "SampleFrame.h"
 
-#include "MemoryManager.h"
 
-static fpp_t framesPerPeriod;
-
-void BufferManager::init( fpp_t framesPerPeriod )
+namespace lmms
 {
-	::framesPerPeriod = framesPerPeriod;
+
+f_cnt_t BufferManager::s_framesPerPeriod;
+
+void BufferManager::init( f_cnt_t fpp )
+{
+	s_framesPerPeriod = fpp;
 }
 
 
-sampleFrame * BufferManager::acquire()
+SampleFrame* BufferManager::acquire()
 {
-	return MM_ALLOC<sampleFrame>( ::framesPerPeriod );
+	return new SampleFrame[s_framesPerPeriod];
 }
 
-void BufferManager::clear( sampleFrame *ab, const f_cnt_t frames, const f_cnt_t offset )
+
+
+void BufferManager::release( SampleFrame* buf )
 {
-	memset( ab + offset, 0, sizeof( *ab ) * frames );
+	delete[] buf;
 }
 
-#ifndef LMMS_DISABLE_SURROUND
-void BufferManager::clear( surroundSampleFrame * ab, const f_cnt_t frames,
-							const f_cnt_t offset )
-{
-	memset( ab + offset, 0, sizeof( *ab ) * frames );
-}
-#endif
-
-
-void BufferManager::release( sampleFrame * buf )
-{
-	MM_FREE( buf );
-}
-
+} // namespace lmms

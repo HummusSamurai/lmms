@@ -23,11 +23,14 @@
  */
 
 
-#include <QDomElement>
 
 #include "ReverbSCControls.h"
 #include "ReverbSC.h"
 #include "Engine.h"
+
+namespace lmms
+{
+
 
 ReverbSCControls::ReverbSCControls( ReverbSCEffect* effect ) :
 	EffectControls( effect ),
@@ -64,3 +67,6 @@ void ReverbSCControls::changeSampleRate()
 {
 	m_effect->changeSampleRate();
 }
+
+
+} // namespace lmms

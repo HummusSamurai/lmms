@@ -23,10 +23,11 @@
  *
  */
 
-#ifndef INSTRUMENT_TRACK_H
-#define INSTRUMENT_TRACK_H
+#ifndef LMMS_INSTRUMENT_TRACK_H
+#define LMMS_INSTRUMENT_TRACK_H
 
-#include "AudioPort.h"
+
+#include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"
 #include "InstrumentSoundShaping.h"
 #include "Microtuner.h"
@@ -39,21 +40,34 @@
 #include "Track.h"
 
 
+namespace lmms
+{
+
+
 class Instrument;
 class DataFile;
+
+namespace gui
+{
+
+class InstrumentTrackView;
+class InstrumentTrackWindow;
+class InstrumentTuningView;
+class MidiCCRackView;
+
+} // namespace gui
 
 
 class LMMS_EXPORT InstrumentTrack : public Track, public MidiEventProcessor
 {
 	Q_OBJECT
-	MM_OPERATORS
 	mapPropertyFromModel(int,getVolume,setVolume,m_volumeModel);
 public:
 	InstrumentTrack( TrackContainer* tc );
-	virtual ~InstrumentTrack();
+	~InstrumentTrack() override;
 
 	// used by instrument
-	void processAudioBuffer( sampleFrame * _buf, const fpp_t _frames,
+	void processAudioBuffer( SampleFrame* _buf, const f_cnt_t _frames,
 							NotePlayHandle * _n );
 
 	MidiEvent applyMasterKey( const MidiEvent& event );
@@ -73,7 +87,7 @@ public:
 
 	// for capturing note-play-events -> need that for arpeggio,
 	// filter and so on
-	void playNote( NotePlayHandle * _n, sampleFrame * _working_buffer );
+	void playNote( NotePlayHandle * _n, SampleFrame* _working_buffer );
 
 	QString instrumentName() const;
 	const Instrument *instrument() const
@@ -108,18 +122,17 @@ public:
 	}
 
 	// play everything in given frame-range - creates note-play-handles
-	virtual bool play( const TimePos & _start, const fpp_t _frames,
+	bool play( const TimePos & _start, const f_cnt_t _frames,
 						const f_cnt_t _frame_base, int _clip_num = -1 ) override;
 	// create new view for me
-	TrackView * createView( TrackContainerView* tcv ) override;
+	gui::TrackView* createView( gui::TrackContainerView* tcv ) override;
 
 	// create new track-content-object = clip
 	Clip* createClip(const TimePos & pos) override;
 
 
 	// called by track
-	virtual void saveTrackSpecificSettings( QDomDocument & _doc,
-							QDomElement & _parent ) override;
+	void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) override;
 	void loadTrackSpecificSettings( const QDomElement & _this ) override;
 
 	using Track::setJournalling;
@@ -130,9 +143,9 @@ public:
 				const Plugin::Descriptor::SubPluginFeatures::Key* key = nullptr,
 				bool keyFromDnd = false);
 
-	AudioPort * audioPort()
+	AudioBusHandle* audioBusHandle()
 	{
-		return &m_audioPort;
+		return &m_audioBusHandle;
 	}
 
 	MidiPort * midiPort()
@@ -161,10 +174,24 @@ public:
 	}
 
 	bool keyRangeImport() const;
+
+	//! @brief Check if there is a valid mapping for the given key and it is within defined of range.
 	bool isKeyMapped(int key) const;
+
+	//! @brief Return first mapped key, based on currently selected keymap or user selection.
+	//! @return Number ranging from 0 to NumKeys -1
 	int firstKey() const;
+
+	//! @brief Return last mapped key, based on currently selected keymap or user selection.
+	//! @return Number ranging from 0 to NumKeys -1
 	int lastKey() const;
+
+	//! @brief Return base key number, based on currently selected keymap or user selection.
+	//! @return Number ranging from 0 to NumKeys -1
 	int baseNote() const;
+
+	//! @brief Return frequency assigned to the base key, based on currently selected keymap.
+	//! @return Frequency in Hz
 	float baseFreq() const;
 
 	Piano *pianoModel()
@@ -210,6 +237,11 @@ public:
 		return &m_mixerChannelModel;
 	}
 
+	BoolModel* useMasterPitchModel()
+	{
+		return &m_useMasterPitchModel;
+	}
+
 	void setPreviewMode( const bool );
 
 	bool isPreviewMode() const
@@ -219,13 +251,17 @@ public:
 	
 	void replaceInstrument(DataFile dataFile);
 
-	void autoAssignMidiDevice( bool );
+	//! @brief Automatically assign a midi controller to this track, based on the midiautoassign setting
+	//! @param assign Set to true to connect the midi device, set to false to disconnect
+	void autoAssignMidiDevice(bool assign);
+
+	//! Returns a non-owning pointer to the model for the knob at the given index in the track's MIDI CC rack
+	FloatModel* midiCCModel(int index) const { return m_midiCCModel[index].get(); }
 
 signals:
 	void instrumentChanged();
-	void midiNoteOn( const Note& );
-	void midiNoteOff( const Note& );
-	void nameChanged();
+	void midiNoteOn( const lmms::Note& );
+	void midiNoteOff( const lmms::Note& );
 	void newNote();
 	void endNote();
 
@@ -275,7 +311,7 @@ private:
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
 
-	AudioPort m_audioPort;
+	AudioBusHandle m_audioBusHandle;
 
 	FloatModel m_pitchModel;
 	IntModel m_pitchRangeModel;
@@ -294,12 +330,16 @@ private:
 	std::unique_ptr<BoolModel> m_midiCCEnable;
 	std::unique_ptr<FloatModel> m_midiCCModel[MidiControllerCount];
 
-	friend class InstrumentTrackView;
-	friend class InstrumentTrackWindow;
+	friend class gui::InstrumentTrackView;
+	friend class gui::InstrumentTrackWindow;
 	friend class NotePlayHandle;
-	friend class InstrumentMiscView;
-	friend class MidiCCRackView;
+	friend class gui::InstrumentTuningView;
+	friend class gui::MidiCCRackView;
 
 } ;
 
-#endif
+
+
+} // namespace lmms
+
+#endif // LMMS_INSTRUMENT_TRACK_H

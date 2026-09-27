@@ -23,35 +23,33 @@
  *
  */
 
-#ifndef EFFECT_CONTROL_DIALOG_H
-#define EFFECT_CONTROL_DIALOG_H
+#ifndef LMMS_GUI_EFFECT_CONTROL_DIALOG_H
+#define LMMS_GUI_EFFECT_CONTROL_DIALOG_H
 
 #include <QWidget>
 
 #include "ModelView.h"
 
+namespace lmms
+{
+
 class EffectControls;
 
+namespace gui
+{
 
 class LMMS_EXPORT EffectControlDialog : public QWidget, public ModelView
 {
-	Q_OBJECT
 public:
-	EffectControlDialog( EffectControls * _controls );
-	virtual ~EffectControlDialog();
-
-	virtual bool isResizable() const {return false;}
-
-
-signals:
-	void closed();
-
+	EffectControlDialog(EffectControls* controls);
+	~EffectControlDialog() override = default;
 
 protected:
-	void closeEvent( QCloseEvent * _ce ) override;
+	EffectControls* m_effectControls;
+};
 
-	EffectControls * m_effectControls;
+} // namespace gui
 
-} ;
+} // namespace lmms
 
-#endif
+#endif // LMMS_GUI_EFFECT_CONTROL_DIALOG_H

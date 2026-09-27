@@ -29,19 +29,23 @@
 #define CARLA_MIN_PARAM_VERSION 0x020090
 #define CARLA_VERSION_HEX_3 0x30000
 
+#include <vector>
+
 // qt
 #include <QCloseEvent>
 #include <QDomElement>
 #include <QMutex>
+#include <QRegularExpression>
 
 // carla/source/includes
 #include "carlabase_export.h"
+#include <CarlaDefines.h>
 #if CARLA_VERSION_HEX >= 0x010911
-    #include "CarlaNativePlugin.h"
+    #include <CarlaNativePlugin.h>  // IWYU pragma: keep
 #else
-    #include "CarlaBackend.h"
-    #include "CarlaNative.h"
-    #include "CarlaUtils.h"
+    #include <CarlaBackend.h>
+    #include <CarlaNative.h>
+    #include <CarlaUtils.h>
     CARLA_EXPORT
     const NativePluginDescriptor* carla_get_native_patchbay_plugin();
 
@@ -61,17 +65,25 @@ class QCompleter;
 class QGridLayout;
 class QHBoxLayout;
 class QLineEdit;
-class QStringListModel;
+class QStringListModel;  // IWYU pragma: keep
 class QScrollArea;
 
+
+namespace lmms
+{
+
+namespace gui
+{
 class CarlaParamsView;
+class CarlaInstrumentView;
 class Knob;
+}
 
 class CarlaParamFloatModel : public FloatModel
 {
 public:
 	CarlaParamFloatModel(Model * parent):
-		FloatModel(0.0, 0.0, 1.0, 0.001, parent, "Unused"),
+		FloatModel(0.f, 0.f, 1.f, 0.001f, parent, "Unused"),
 		m_isOutput(false),
 		m_isEnabled(false)
 	{
@@ -80,11 +92,11 @@ public:
 	// From AutomatableModel.h, it's private there.
 	inline static bool mustQuoteName(const QString &name)
 	{
-		QRegExp reg("^[A-Za-z0-9._-]+$");
-		return !reg.exactMatch(name);
+		QRegularExpression reg("^[A-Za-z0-9._-]+$");
+		return !reg.match(name).hasMatch();
 	}
 
-	inline virtual void loadSettings(const QDomElement& element, const QString& name = QString("value")) override
+	inline void loadSettings(const QDomElement& element, const QString& name = QString("value")) override
 	{
 		AutomatableModel::loadSettings(element, name);
 		bool mustQuote = mustQuoteName(name);
@@ -95,7 +107,7 @@ public:
 		}
 	}
 
-	inline virtual void saveSettings(QDomDocument& doc, QDomElement& element,
+	inline void saveSettings(QDomDocument& doc, QDomElement& element,
 		const QString& name = QString( "value" )) override
 	{
 		if (m_isEnabled)
@@ -160,59 +172,6 @@ private:
 
 // -------------------------------------------------------------------
 
-class CarlaParamsSubWindow : public SubWindow
-{
-	Q_OBJECT
-
-signals:
-	void uiClosed();
-	void resized();
-
-public:
-	CarlaParamsSubWindow(QWidget * _parent, Qt::WindowFlags windowFlags) :
-		SubWindow(_parent)
-	{
-		setAttribute(Qt::WA_DeleteOnClose, false);
-		setWindowFlags(windowFlags);
-	}
-
-	virtual void resizeEvent(QResizeEvent * event) override
-	{
-		if (mousePress) {
-			resizing = true;
-		}
-		SubWindow::resizeEvent(event);
-	}
-
-	virtual void mousePressEvent(QMouseEvent * event) override
-	{
-		mousePress = true;
-		SubWindow::mousePressEvent(event);
-	}
-
-	virtual void mouseReleaseEvent(QMouseEvent * event) override
-	{
-		if (resizing) {
-			resizing = false;
-			mousePress = false;
-			emit resized();
-		}
-		SubWindow::mouseReleaseEvent(event);
-	}
-
-	virtual void closeEvent(QCloseEvent * event) override
-	{
-		emit uiClosed();
-		event->accept();
-	}
-
-private:
-	bool resizing = false;
-	bool mousePress = false;
-};
-
-// -------------------------------------------------------------------
-
 class CARLABASE_EXPORT CarlaInstrument : public Instrument
 {
     Q_OBJECT
@@ -221,7 +180,7 @@ public:
     static const uint32_t kMaxMidiEvents = 512;
 
     CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay);
-    virtual ~CarlaInstrument();
+    ~CarlaInstrument() override;
 
     // Carla NativeHostDescriptor functions
     uint32_t handleGetBufferSize() const;
@@ -233,13 +192,12 @@ public:
     intptr_t handleDispatcher(const NativeHostDispatcherOpcode opcode, const int32_t index, const intptr_t value, void* const ptr, const float opt);
 
     // LMMS functions
-    virtual Flags flags() const;
-    virtual QString nodeName() const;
-    virtual void saveSettings(QDomDocument& doc, QDomElement& parent);
-    virtual void loadSettings(const QDomElement& elem);
-    virtual void play(sampleFrame* workingBuffer);
-    virtual bool handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset);
-    virtual PluginView* instantiateView(QWidget* parent);
+    QString nodeName() const override;
+    void saveSettings(QDomDocument& doc, QDomElement& parent) override;
+    void loadSettings(const QDomElement& elem) override;
+    void play(SampleFrame* workingBuffer) override;
+    bool handleMidiEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset) override;
+    gui::PluginView* instantiateView(QWidget* parent) override;
 
 signals:
     void uiClosed();
@@ -267,16 +225,72 @@ private:
     QMutex fMutex;
 
     uint8_t m_paramGroupCount;
-    QList<CarlaParamFloatModel*> m_paramModels;
+    std::vector<CarlaParamFloatModel*> m_paramModels;
     QDomElement m_settingsElem;
 
     QCompleter* m_paramsCompleter;
     QStringListModel* m_completerModel;
 
-    friend class CarlaInstrumentView;
-    friend class CarlaParamsView;
+    friend class gui::CarlaInstrumentView;
+    friend class gui::CarlaParamsView;
 };
 
+
+// -------------------------------------------------------------------
+
+namespace gui
+{
+
+class CarlaParamsSubWindow : public SubWindow
+{
+Q_OBJECT
+
+signals:
+	void uiClosed();
+	void resized();
+
+public:
+	CarlaParamsSubWindow(QWidget * _parent, Qt::WindowFlags windowFlags) :
+		SubWindow(_parent)
+	{
+		setAttribute(Qt::WA_DeleteOnClose, false);
+		setWindowFlags(windowFlags);
+	}
+
+	void resizeEvent(QResizeEvent * event) override
+	{
+		if (mousePress) {
+			resizing = true;
+		}
+		SubWindow::resizeEvent(event);
+	}
+
+	void mousePressEvent(QMouseEvent * event) override
+	{
+		mousePress = true;
+		SubWindow::mousePressEvent(event);
+	}
+
+	void mouseReleaseEvent(QMouseEvent * event) override
+	{
+		if (resizing) {
+			resizing = false;
+			mousePress = false;
+			emit resized();
+		}
+		SubWindow::mouseReleaseEvent(event);
+	}
+
+	void closeEvent(QCloseEvent * event) override
+	{
+		emit uiClosed();
+		event->accept();
+	}
+
+private:
+	bool resizing = false;
+	bool mousePress = false;
+};
 
 // -------------------------------------------------------------------
 
@@ -286,7 +300,7 @@ class CarlaInstrumentView : public InstrumentViewFixedSize
 
 public:
     CarlaInstrumentView(CarlaInstrument* const instrument, QWidget* const parent);
-    virtual ~CarlaInstrumentView();
+    ~CarlaInstrumentView() override;
 
 private slots:
     void toggleUI(bool);
@@ -295,8 +309,8 @@ private slots:
     void paramsUiClosed();
 
 private:
-    virtual void modelChanged();
-    virtual void timerEvent(QTimerEvent*);
+    void modelChanged() override;
+    void timerEvent(QTimerEvent*) override;
 
     NativePluginHandle fHandle;
     const NativePluginDescriptor* fDescriptor;
@@ -321,7 +335,7 @@ class CarlaParamsView : public InstrumentView
 	Q_OBJECT
 public:
 	CarlaParamsView(CarlaInstrumentView* const instrumentView, QWidget* const parent);
-	virtual ~CarlaParamsView();
+	~CarlaParamsView() override;
 
 signals:
 	void uiClosed();
@@ -339,7 +353,7 @@ private:
 
 	CarlaInstrument* const m_carlaInstrument;
 	CarlaInstrumentView* const m_carlaInstrumentView;
-	QList<Knob*> m_knobs;
+	std::vector<Knob*> m_knobs;
 
 	// Keep track of the biggest knob width per group
 	QList<uint16_t> m_maxKnobWidthPerGroup;
@@ -363,5 +377,10 @@ private:
 	QComboBox* m_groupFilterCombo;
 	QStringListModel* m_groupFilterModel;
 };
+
+
+} // namespace gui
+
+} // namespace lmms
 
 #endif

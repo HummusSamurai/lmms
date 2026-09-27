@@ -33,9 +33,13 @@
 #include "PixmapButton.h"
 #include "embed.h"
 
-#include "gui_templates.h"
+#include "FontHelper.h"
 #include <QToolBar>
 #include <QLabel>
+
+namespace lmms::gui
+{
+
 
 VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 	EffectControlDialog( _ctl ),
@@ -44,7 +48,7 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 	m_plugin( nullptr ),
 	tbLabel( nullptr )
 {
-	QGridLayout * l = new QGridLayout( this );
+	auto l = new QGridLayout(this);
 	l->setContentsMargins( 10, 10, 10, 10 );
 	l->setVerticalSpacing( 2 );
 	l->setHorizontalSpacing( 2 );
@@ -69,7 +73,7 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 	{
 		setWindowTitle( m_plugin->name() );
 
-		QPushButton * btn = new QPushButton( tr( "Show/hide" ));
+		auto btn = new QPushButton(tr("Show/hide"));
 
 		if (embed_vst) {
 			btn->setCheckable( true );
@@ -119,13 +123,9 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 		m_openPresetButton->setMinimumHeight( 16 );
 		m_openPresetButton->setMaximumHeight( 16 );
 
-		m_rolLPresetButton = new PixmapButton( this, "" );
-		m_rolLPresetButton->setCheckable( false );
-		m_rolLPresetButton->setCursor( Qt::PointingHandCursor );
-		m_rolLPresetButton->setActiveGraphic( embed::getIconPixmap(
-							"stepper-left-press" ) );
-		m_rolLPresetButton->setInactiveGraphic( embed::getIconPixmap(
-							"stepper-left" ) );
+		m_rolLPresetButton = new QPushButton(this);
+		m_rolLPresetButton->setObjectName("btn-stepper-left");
+		m_rolLPresetButton->setCursor(Qt::PointingHandCursor);
 		connect( m_rolLPresetButton, SIGNAL( clicked() ), _ctl,
 						SLOT( rolrPreset() ) );
 
@@ -136,18 +136,10 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 
 		m_rolLPresetButton->setShortcut( Qt::Key_Minus );
 
-		m_rolLPresetButton->setMinimumWidth( 16 );
-		m_rolLPresetButton->setMaximumWidth( 16 );
-		m_rolLPresetButton->setMinimumHeight( 16 );
-		m_rolLPresetButton->setMaximumHeight( 16 );
 
-		m_rolRPresetButton = new PixmapButton( this, "" );
-		m_rolRPresetButton->setCheckable( false );
-		m_rolRPresetButton->setCursor( Qt::PointingHandCursor );
-		m_rolRPresetButton->setActiveGraphic( embed::getIconPixmap(
-							"stepper-right-press" ) );
-		m_rolRPresetButton->setInactiveGraphic( embed::getIconPixmap(
-							"stepper-right" ) );
+		m_rolRPresetButton = new QPushButton(this);
+		m_rolRPresetButton->setObjectName("btn-stepper-right");
+		m_rolRPresetButton->setCursor(Qt::PointingHandCursor);
 		connect( m_rolRPresetButton, SIGNAL( clicked() ), _ctl,
 						SLOT( rollPreset() ) );
 
@@ -158,18 +150,12 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 
 		m_rolRPresetButton->setShortcut( Qt::Key_Plus );
 
-		m_rolRPresetButton->setMinimumWidth( 16 );
-		m_rolRPresetButton->setMaximumWidth( 16 );
-		m_rolRPresetButton->setMinimumHeight( 16 );
-		m_rolRPresetButton->setMaximumHeight( 16 );
 
- 		_ctl->m_selPresetButton = new QPushButton( tr( "" ), this );
+		_ctl->m_selPresetButton = new QPushButton(this);
+		_ctl->m_selPresetButton->setObjectName("btn-stepper-down");
+		_ctl->m_selPresetButton->setCursor(Qt::PointingHandCursor);
 
-		_ctl->m_selPresetButton->setCheckable( false );
-		_ctl->m_selPresetButton->setCursor( Qt::PointingHandCursor );
-		_ctl->m_selPresetButton->setIcon( embed::getIconPixmap( "stepper-down" ) );
-
-		QMenu * menu = new QMenu;
+		auto menu = new QMenu;
 		connect( menu, SIGNAL( aboutToShow() ), _ctl, SLOT( updateMenu() ) );
 
  		_ctl->m_selPresetButton->setMenu(menu);
@@ -202,24 +188,25 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 		}
 		newSize = std::max(newSize, 250);
 
-		QWidget* resize = new QWidget(this);
+		auto resize = new QWidget(this);
 		resize->resize( newSize, 10 );
-		QWidget* space0 = new QWidget(this);
+		auto space0 = new QWidget(this);
 		space0->resize(8, 10);
-		QWidget* space1 = new QWidget(this);
+		auto space1 = new QWidget(this);
 		space1->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 		QFont f( "Arial", 10 );
 
 		l->addItem( new QSpacerItem( newSize - 20, 30, QSizePolicy::Fixed,
 						QSizePolicy::Fixed ), 1, 0 );
 		l->addWidget( resize, 2, 0, 1, 1, Qt::AlignCenter );
-		if (m_pluginWidget) {
-			l->addWidget( m_pluginWidget, 3, 0, 1, 1, Qt::AlignCenter );
-		}
 		l->setRowStretch( 5, 1 );
 		l->setColumnStretch( 1, 1 );
 
-		QToolBar * tb = new QToolBar( this );
+		auto tb = new QToolBar(this);
+		if (m_pluginWidget) {
+			l->addWidget(m_pluginWidget, 3, 0, 1, 1, Qt::AlignCenter);
+		}
+
 		tb->resize( newSize , 32 );
 		tb->addWidget(space0);
 		tb->addWidget( m_rolLPresetButton );
@@ -232,7 +219,7 @@ VstEffectControlDialog::VstEffectControlDialog( VstEffectControls * _ctl ) :
 		tb->addWidget(space1);
 
 		tbLabel = new QLabel( tr( "Effect by: " ), this );
-		tbLabel->setFont( pointSize<7>( f ) );
+		tbLabel->setFont(adjustedToPixelSize(f, SMALL_FONT_SIZE));
 		tbLabel->setTextFormat(Qt::RichText);
 		tbLabel->setAlignment( Qt::AlignTop | Qt::AlignLeft );
 		tb->addWidget( tbLabel );
@@ -294,3 +281,5 @@ void VstEffectControlDialog::togglePluginUI( bool checked )
 	}
 }
 
+
+} // namespace lmms::gui

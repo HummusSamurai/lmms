@@ -38,6 +38,9 @@
 #include "MainWindow.h"
 #include "SubWindow.h"
 
+namespace lmms::gui
+{
+
 
 MidiCCRackView::MidiCCRackView(InstrumentTrack * track) :
 	QWidget(),
@@ -46,7 +49,7 @@ MidiCCRackView::MidiCCRackView(InstrumentTrack * track) :
 	setWindowIcon(embed::getIconPixmap("midi_cc_rack"));
 	setWindowTitle(tr("MIDI CC Rack - %1").arg(m_track->name()));
 
-	QMdiSubWindow * subWin = getGUI()->mainWindow()->addWindowedWidget(this);
+	SubWindow* subWin = getGUI()->mainWindow()->addWindowedWidget(this);
 
 	// Remove maximize button
 	Qt::WindowFlags flags = subWin->windowFlags();
@@ -55,27 +58,27 @@ MidiCCRackView::MidiCCRackView(InstrumentTrack * track) :
 
 	// Adjust window attributes, sizing and position
 	subWin->setAttribute(Qt::WA_DeleteOnClose, false);
-	subWin->resize(350, 300);
-	subWin->setFixedWidth(350);
-	subWin->setMinimumHeight(300);
+	setFixedWidth(350);
+	setMinimumHeight(300);
 	subWin->hide();
 
 	// Main window layout
-	QVBoxLayout *mainLayout = new QVBoxLayout(this);
+	auto mainLayout = new QVBoxLayout(this);
 
 	// Knobs GroupBox - Here we have the MIDI CC controller knobs for the selected track
 	m_midiCCGroupBox = new GroupBox(tr("MIDI CC Knobs:"));
 
 	// Layout to keep scrollable area under the GroupBox header
-	QVBoxLayout *knobsGroupBoxLayout = new QVBoxLayout();
+	auto knobsGroupBoxLayout = new QVBoxLayout();
 	knobsGroupBoxLayout->setContentsMargins(5, 16, 5, 5);
 
 	m_midiCCGroupBox->setLayout(knobsGroupBoxLayout);
 
 	// Scrollable area + widget + its layout that will have all the knobs
-	QScrollArea *knobsScrollArea = new QScrollArea();
-	QWidget *knobsArea = new QWidget();
-	QGridLayout *knobsAreaLayout = new QGridLayout();
+	auto knobsScrollArea = new QScrollArea();
+	auto knobsArea = new QWidget();
+	auto knobsAreaLayout = new QGridLayout();
+	knobsAreaLayout->setVerticalSpacing(10);
 
 	knobsArea->setLayout(knobsAreaLayout);
 	knobsScrollArea->setWidget(knobsArea);
@@ -83,23 +86,20 @@ MidiCCRackView::MidiCCRackView(InstrumentTrack * track) :
 
 	knobsGroupBoxLayout->addWidget(knobsScrollArea);
 
-	// Adds the controller knobs
+	// Adds the controller knobs and sets their models
 	for (int i = 0; i < MidiControllerCount; ++i)
 	{
-		m_controllerKnob[i] = new Knob(knobBright_26);
-		m_controllerKnob[i]->setLabel(tr("CC %1").arg(i));
-		knobsAreaLayout->addWidget(m_controllerKnob[i], i/4, i%4);
+		auto knob = new Knob(KnobType::Bright26, tr("CC %1").arg(i), this);
+		knob->setModel(m_track->m_midiCCModel[i].get());
+		knobsAreaLayout->addWidget(knob, i/4, i%4, Qt::AlignHCenter);
+
+		// TODO It seems that this is not really used/needed?
+		m_controllerKnob[i] = knob;
 	}
 
 	// Set all the models
 	// Set the LED button to enable/disable the track midi cc
 	m_midiCCGroupBox->setModel(m_track->m_midiCCEnable.get());
-
-	// Set the model for each Knob
-	for (int i = 0; i < MidiControllerCount; ++i)
-	{
-		m_controllerKnob[i]->setModel(m_track->m_midiCCModel[i].get());
-	}
 
 	// Connection to update the name of the track on the label
 	connect(m_track, SIGNAL(nameChanged()),
@@ -130,3 +130,6 @@ void MidiCCRackView::saveSettings(QDomDocument & doc, QDomElement & parent)
 void MidiCCRackView::loadSettings(const QDomElement &)
 {
 }
+
+
+} // namespace lmms::gui

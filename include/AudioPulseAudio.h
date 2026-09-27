@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef AUDIO_PULSEAUDIO_H
-#define AUDIO_PULSEAUDIO_H
+#ifndef LMMS_AUDIO_PULSEAUDIO_H
+#define LMMS_AUDIO_PULSEAUDIO_H
 
 #include "lmmsconfig.h"
 
@@ -36,9 +36,15 @@
 #include "AudioDevice.h"
 #include "AudioDeviceSetupWidget.h"
 
-
-class LcdSpinBox;
 class QLineEdit;
+
+namespace lmms
+{
+
+namespace gui
+{
+class LcdSpinBox;
+}
 
 
 class AudioPulseAudio : public QThread, public AudioDevice
@@ -46,7 +52,6 @@ class AudioPulseAudio : public QThread, public AudioDevice
 	Q_OBJECT
 public:
 	AudioPulseAudio( bool & _success_ful, AudioEngine* audioEngine );
-	virtual ~AudioPulseAudio();
 
 	inline static QString name()
 	{
@@ -56,17 +61,17 @@ public:
 	static QString probeDevice();
 
 
-	class setupWidget : public AudioDeviceSetupWidget
+	class setupWidget : public gui::AudioDeviceSetupWidget
 	{
 	public:
 		setupWidget( QWidget * _parent );
-		virtual ~setupWidget();
+		~setupWidget() override;
 
 		void saveSettings() override;
 
 	private:
 		QLineEdit * m_device;
-		LcdSpinBox * m_channels;
+		gui::LcdSpinBox * m_channels;
 
 	} ;
 
@@ -77,23 +82,20 @@ public:
 
 	pa_stream * m_s;
 	pa_sample_spec m_sampleSpec;
-
+	double m_latency;
 
 private:
-	void startProcessing() override;
-	void stopProcessing() override;
-	void applyQualitySettings() override;
+	void startProcessingImpl() override;
+	void stopProcessingImpl() override;
 	void run() override;
-
-	volatile bool m_quit;
-
-	bool m_convertEndian;
 
 	bool m_connected;
 	QSemaphore m_connectedSemaphore;
 
 } ;
 
-#endif
+} // namespace lmms
 
-#endif
+#endif // LMMS_HAVE_PULSEAUDIO
+
+#endif // LMMS_AUDIO_PULSEAUDIO_H

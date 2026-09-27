@@ -22,20 +22,24 @@
  *
  */
 
+#include "ConfigManager.h"
 
-#include <QDomElement>
-#include <QDir>
-#include <QMessageBox>
 #include <QApplication>
+#include <QDir>
+#include <QDomElement>
+#include <QMessageBox>
 #include <QStandardPaths>
 #include <QTextStream>
 
-#include "ConfigManager.h"
-#include "MainWindow.h"
-#include "ProjectVersion.h"
+#include "DeprecationHelper.h"
 #include "GuiApplication.h"
-
+#include "MainWindow.h"
+#include "PathUtil.h"
+#include "ProjectVersion.h"
 #include "lmmsversion.h"
+
+namespace lmms
+{
 
 
 // Vector with all the upgrade methods
@@ -74,9 +78,9 @@ ConfigManager::ConfigManager() :
 	m_sf2Dir = m_workingDir + SF2_PATH;
 	m_gigDir = m_workingDir + GIG_PATH;
 	m_themeDir = defaultThemeDir();
-	if (!qgetenv("LMMS_DATA_DIR").isEmpty())
+	if (std::getenv("LMMS_DATA_DIR"))
 	{
-		QDir::addSearchPath("data", QString::fromLocal8Bit(qgetenv("LMMS_DATA_DIR")));
+		QDir::addSearchPath("data", QString::fromLocal8Bit(std::getenv("LMMS_DATA_DIR")));
 	}
 	initDevelopmentWorkingDir();
 
@@ -170,7 +174,7 @@ void ConfigManager::upgrade()
 	ProjectVersion createdWith = m_version;
 	
 	// Don't use old themes as they break the UI (i.e. 0.4 != 1.0, etc)
-	if (createdWith.setCompareType(ProjectVersion::Minor) != LMMS_VERSION)
+	if (createdWith.setCompareType(ProjectVersion::CompareType::Minor) != LMMS_VERSION)
 	{
 		m_themeDir = defaultThemeDir();
 	}
@@ -185,17 +189,21 @@ QString ConfigManager::defaultVersion() const
 	return LMMS_VERSION;
 }
 
+bool ConfigManager::enableBlockedPlugins()
+{
+	const char* envVar = getenv("LMMS_ENABLE_BLOCKED_PLUGINS");
+	return (envVar && *envVar);
+}
+
 QStringList ConfigManager::availableVstEmbedMethods()
 {
 	QStringList methods;
 	methods.append("none");
-#if QT_VERSION >= 0x050100
 	methods.append("qt");
-#endif
 #ifdef LMMS_BUILD_WIN32
 	methods.append("win32");
 #endif
-#ifdef LMMS_BUILD_LINUX
+#if defined(LMMS_BUILD_LINUX) && (QT_VERSION < QT_VERSION_CHECK(6,0,0))
 	if (static_cast<QGuiApplication*>(QApplication::instance())->
 		platformName() == "xcb")
 	{
@@ -292,9 +300,6 @@ void ConfigManager::setBackgroundPicFile(const QString & backgroundPicFile)
 	m_backgroundPicFile = backgroundPicFile;
 }
 
-
-
-
 void ConfigManager::createWorkingDir()
 {
 	QDir().mkpath(m_workingDir);
@@ -328,36 +333,41 @@ void ConfigManager::addRecentlyOpenedProject(const QString & file)
 	}
 }
 
-
-
-
-const QString & ConfigManager::value(const QString & cls,
-					const QString & attribute) const
+void ConfigManager::addFavoriteItem(const QString& item)
 {
-	if(m_settings.contains(cls))
+	m_favoriteItems.push_back(item);
+	saveConfigFile();
+	emit favoritesChanged();
+}
+
+void ConfigManager::removeFavoriteItem(const QString& item)
+{
+	m_favoriteItems.removeAll(item);
+	saveConfigFile();
+	emit favoritesChanged();
+}
+
+bool ConfigManager::isFavoriteItem(const QString& item)
+{
+	const auto& items = favoriteItems();
+	const auto it = std::find_if(items.begin(), items.end(),
+		[&](const auto& favoriteItem) { return QFileInfo{item} == QFileInfo{favoriteItem}; });
+	return it != items.end();
+}
+
+QString ConfigManager::value(const QString& cls, const QString& attribute, const QString& defaultVal) const
+{
+	if (m_settings.find(cls) != m_settings.end())
 	{
-		for(stringPairVector::const_iterator it =
-						m_settings[cls].begin();
-					it != m_settings[cls].end(); ++it)
+		for (const auto& setting : m_settings[cls])
 		{
-			if((*it).first == attribute)
+			if (setting.first == attribute)
 			{
-				return (*it).second ;
+				return setting.second;
 			}
 		}
 	}
-	static QString empty;
-	return empty;
-}
-
-
-
-const QString & ConfigManager::value(const QString & cls,
-				      const QString & attribute,
-				      const QString & defaultVal) const
-{
-	const QString & val = value(cls, attribute);
-	return val.isEmpty() ? defaultVal : val;
+	return defaultVal;
 }
 
 
@@ -420,7 +430,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	{
 		QString errorString;
 		int errorLine, errorCol;
-		if(dom_tree.setContent(&cfg_file, false, &errorString, &errorLine, &errorCol))
+		if (lmms::setContent(dom_tree, &cfg_file, false, &errorString, &errorLine, &errorCol))
 		{
 			// get the head information from the DOM
 			QDomElement root = dom_tree.documentElement();
@@ -473,8 +483,20 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 					{
 						if(n.isElement() && n.toElement().hasAttributes())
 						{
-							m_recentlyOpenedProjects <<
-									n.toElement().attribute("path");
+							m_recentlyOpenedProjects << n.toElement().attribute("path");
+						}
+						n = n.nextSibling();
+					}
+				}
+				else if (node.nodeName() == "favoriteitems")
+				{
+					m_favoriteItems.clear();
+					QDomNode n = node.firstChild();
+					while (!n.isNull())
+					{
+						if (n.isElement() && n.toElement().hasAttributes())
+						{
+							m_favoriteItems << n.toElement().attribute("path");
 						}
 						n = n.nextSibling();
 					}
@@ -514,10 +536,10 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		#endif
 			setBackgroundPicFile(value("paths", "backgroundtheme"));
 		}
-		else if(getGUI() != nullptr)
+		else if (gui::getGUI() != nullptr)
 		{
-			QMessageBox::warning(nullptr, MainWindow::tr("Configuration file"),
-									MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
+			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
+									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
 													arg(errorLine).
 													arg(errorCol).
 													arg(errorString));
@@ -525,7 +547,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		cfg_file.close();
 	}
 
-	// Plugins are searched recursively, blacklist problematic locations
+	// Plugins are searched recursively, block problematic locations
 	if( m_vstDir.isEmpty() || m_vstDir == QDir::separator() || m_vstDir == "/" ||
 			m_vstDir == ensureTrailingSlash( QDir::homePath() ) ||
 			!QDir( m_vstDir ).exists() )
@@ -563,13 +585,13 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		}
 #endif
 	}
-#endif
+#endif // LMMS_HAVE_STK
 
 	upgrade();
 
 	QStringList searchPaths;
-	if(! qgetenv("LMMS_THEME_PATH").isNull())
-		searchPaths << qgetenv("LMMS_THEME_PATH");
+	if (std::getenv("LMMS_THEME_PATH"))
+		searchPaths << std::getenv("LMMS_THEME_PATH");
 	searchPaths << themeDir() << defaultThemeDir();
 	QDir::setSearchPaths("resources", searchPaths);
 
@@ -577,6 +599,16 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	if(hasWorkingDir())
 	{
 		createWorkingDir();
+	}
+
+	for (auto& file : m_recentlyOpenedProjects)
+	{
+		file = PathUtil::toAbsolute(file);
+	}
+
+	for (auto& file : m_favoriteItems)
+	{
+		file = PathUtil::toAbsolute(file);
 	}
 }
 
@@ -606,34 +638,44 @@ void ConfigManager::saveConfigFile()
 	lmms_config.setAttribute("configversion", m_configVersion);
 	doc.appendChild(lmms_config);
 
-	for(settingsMap::iterator it = m_settings.begin();
-						it != m_settings.end(); ++it)
+	for (auto it = m_settings.begin(); it != m_settings.end(); ++it)
 	{
 		QDomElement n = doc.createElement(it.key());
-		for(stringPairVector::iterator it2 = (*it).begin();
-						it2 != (*it).end(); ++it2)
+		for (const auto& [first, second] : *it)
 		{
-			n.setAttribute((*it2).first, (*it2).second);
+			n.setAttribute(first, second);
 		}
 		lmms_config.appendChild(n);
 	}
 
 	QDomElement recent_files = doc.createElement("recentfiles");
 
-	for(QStringList::iterator it = m_recentlyOpenedProjects.begin();
-				it != m_recentlyOpenedProjects.end(); ++it)
+	for (const auto& recentlyOpenedProject : m_recentlyOpenedProjects)
 	{
 		QDomElement n = doc.createElement("file");
-		n.setAttribute("path", *it);
+		n.setAttribute("path", PathUtil::toShortestRelative(recentlyOpenedProject));
 		recent_files.appendChild(n);
 	}
 	lmms_config.appendChild(recent_files);
+
+	QDomElement favorite_items = doc.createElement("favoriteitems");
+
+	for (const auto& favoriteItem : m_favoriteItems)
+	{
+		QDomElement n = doc.createElement("item");
+		n.setAttribute("path", PathUtil::toShortestRelative(favoriteItem));
+		favorite_items.appendChild(n);
+	}
+
+	lmms_config.appendChild(favorite_items);
 
 	QString xml = "<?xml version=\"1.0\"?>\n" + doc.toString(2);
 
 	QFile outfile(m_lmmsRcFile);
 	if(!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
 	{
+		using gui::MainWindow;
+
 		QString title, message;
 		title = MainWindow::tr("Could not open file");
 		message = MainWindow::tr("Could not open file %1 "
@@ -643,7 +685,7 @@ void ConfigManager::saveConfigFile()
 					"the directory containing the "
 					"file and try again!"
 						).arg(m_lmmsRcFile);
-		if(getGUI() != nullptr)
+		if (gui::getGUI() != nullptr)
 		{
 			QMessageBox::critical(nullptr, title, message,
 						QMessageBox::Ok,
@@ -719,7 +761,7 @@ unsigned int ConfigManager::legacyConfigVersion()
 {
 	ProjectVersion createdWith = m_version;
 
-	createdWith.setCompareType(ProjectVersion::Build);
+	createdWith.setCompareType(ProjectVersion::CompareType::Build);
 
 	if( createdWith < "1.1.90" )
 	{
@@ -734,3 +776,6 @@ unsigned int ConfigManager::legacyConfigVersion()
 		return 2;
 	}
 }
+
+
+} // namespace lmms

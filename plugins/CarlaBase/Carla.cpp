@@ -32,7 +32,7 @@
 #include "Knob.h"
 #include "MidiEventToByteSeq.h"
 #include "MainWindow.h"
-#include "gui_templates.h"
+#include "FontHelper.h"
 #include "Song.h"
 
 #include <QApplication>
@@ -57,6 +57,9 @@
 #include <cstring>
 
 #include "embed.h"
+
+namespace lmms
+{
 
 // this doesn't seem to be defined anywhere
 static const double ticksPerBeat = 48.0;
@@ -145,8 +148,9 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 
 // -----------------------------------------------------------------------
 
+
 CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay)
-    : Instrument(instrumentTrack, descriptor),
+    : Instrument(instrumentTrack, descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
       fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
@@ -190,8 +194,8 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
         fDescriptor->activate(fHandle);
 
     // we need a play-handle which cares for calling play()
-    InstrumentPlayHandle * iph = new InstrumentPlayHandle( this, instrumentTrack );
-    Engine::audioEngine()->addPlayHandle( iph );
+	auto iph = new InstrumentPlayHandle(this, instrumentTrack);
+	Engine::audioEngine()->addPlayHandle( iph );
 
 #if CARLA_VERSION_HEX >= CARLA_MIN_PARAM_VERSION
     // text filter completion
@@ -201,9 +205,9 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
     m_paramsCompleter->setCompletionMode(QCompleter::PopupCompletion);
 
     // Add static amount of CarlaParamFloatModel's.
-    int paramCount = fDescriptor->get_parameter_count(fHandle);
+    const auto paramCount = fDescriptor->get_parameter_count(fHandle);
     m_paramModels.reserve(paramCount);
-    for (int i=0; i < paramCount; ++i)
+    for (auto i = std::size_t{0}; i < paramCount; ++i)
     {
         m_paramModels.push_back(new CarlaParamFloatModel(this));
         connect(m_paramModels[i], &CarlaParamFloatModel::dataChanged,
@@ -216,7 +220,7 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
 
 CarlaInstrument::~CarlaInstrument()
 {
-    Engine::audioEngine()->removePlayHandlesOfTypes(instrumentTrack(), PlayHandle::TypeNotePlayHandle | PlayHandle::TypeInstrumentPlayHandle);
+    Engine::audioEngine()->removePlayHandlesOfTypes(instrumentTrack(), PlayHandle::Type::NotePlayHandle | PlayHandle::Type::InstrumentPlayHandle);
 
     if (fHost.resourceDir != nullptr)
     {
@@ -255,7 +259,7 @@ uint32_t CarlaInstrument::handleGetBufferSize() const
 
 double CarlaInstrument::handleGetSampleRate() const
 {
-    return Engine::audioEngine()->processingSampleRate();
+    return Engine::audioEngine()->outputSampleRate();
 }
 
 bool CarlaInstrument::handleIsOffline() const
@@ -270,7 +274,7 @@ const NativeTimeInfo* CarlaInstrument::handleGetTimeInfo() const
 
 void CarlaInstrument::handleUiParameterChanged(const uint32_t index, const float value) const
 {
-	if (m_paramModels.count() > index)
+	if (m_paramModels.size() > index)
 	{
 		m_paramModels[index]->setValue(value);
 	}
@@ -339,11 +343,6 @@ intptr_t CarlaInstrument::handleDispatcher(const NativeHostDispatcherOpcode opco
 
 // -------------------------------------------------------------------
 
-Instrument::Flags CarlaInstrument::flags() const
-{
-    return IsSingleStreamed|IsMidiBased|IsNotBendable;
-}
-
 QString CarlaInstrument::nodeName() const
 {
     return  descriptor()->name;
@@ -370,7 +369,7 @@ void CarlaInstrument::saveSettings(QDomDocument& doc, QDomElement& parent)
     std::free(state);
 
 #if CARLA_VERSION_HEX >= CARLA_MIN_PARAM_VERSION
-    for (uint32_t index = 0; index < m_paramModels.count(); ++index)
+    for (uint32_t index = 0; index < m_paramModels.size(); ++index)
     {
         QString idStr = CARLA_SETTING_PREFIX + QString::number(index);
         m_paramModels[index]->saveSettings(doc, parent, idStr);
@@ -440,7 +439,7 @@ void CarlaInstrument::refreshParams(bool init)
 void CarlaInstrument::clearParamModels()
 {
 	//Delete the models, this also disconnects all connections (automation and controller connections)
-	for (uint32_t index=0; index < m_paramModels.count(); ++index)
+	for (uint32_t index = 0; index < m_paramModels.size(); ++index)
 	{
 		delete m_paramModels[index];
 	}
@@ -496,15 +495,14 @@ void CarlaInstrument::loadSettings(const QDomElement& elem)
 #endif
 }
 
-void CarlaInstrument::play(sampleFrame* workingBuffer)
+void CarlaInstrument::play(SampleFrame* workingBuffer)
 {
     const uint bufsize = Engine::audioEngine()->framesPerPeriod();
 
-    std::memset(workingBuffer, 0, sizeof(sample_t)*bufsize*DEFAULT_CHANNELS);
+	zeroSampleFrames(workingBuffer, bufsize);
 
     if (fHandle == nullptr)
     {
-        instrumentTrack()->processAudioBuffer(workingBuffer, bufsize, nullptr);
         return;
     }
 
@@ -552,8 +550,6 @@ void CarlaInstrument::play(sampleFrame* workingBuffer)
         workingBuffer[i][0] = buf1[i];
         workingBuffer[i][1] = buf2[i];
     }
-
-    instrumentTrack()->processAudioBuffer(workingBuffer, bufsize, nullptr);
 }
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)
@@ -575,7 +571,7 @@ bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_
     return true;
 }
 
-PluginView* CarlaInstrument::instantiateView(QWidget* parent)
+gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)
 {
 // Disable plugin focus per https://bugreports.qt.io/browse/QTBUG-30181
 #ifndef CARLA_OS_MAC
@@ -592,7 +588,7 @@ PluginView* CarlaInstrument::instantiateView(QWidget* parent)
     //fHost.uiName = strdup(parent->windowTitle().toUtf8().constData());
     fHost.uiName = strdup(kIsPatchbay ? "CarlaPatchbay-LMMS" : "CarlaRack-LMMS");
 
-    return new CarlaInstrumentView(this, parent);
+    return new gui::CarlaInstrumentView(this, parent);
 }
 
 void CarlaInstrument::sampleRateChanged()
@@ -601,6 +597,9 @@ void CarlaInstrument::sampleRateChanged()
 }
 
 // -------------------------------------------------------------------
+
+namespace gui
+{
 
 CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWidget* const parent)
     : InstrumentViewFixedSize(instrument, parent),
@@ -618,8 +617,8 @@ CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWid
     pal.setBrush(backgroundRole(), instrument->kIsPatchbay ? PLUGIN_NAME::getIconPixmap("artwork-patchbay") : PLUGIN_NAME::getIconPixmap("artwork-rack"));
     setPalette(pal);
 
-    QHBoxLayout* l = new QHBoxLayout(this);
-    l->setContentsMargins( 20, 180, 10, 10 );
+	auto l = new QHBoxLayout(this);
+	l->setContentsMargins( 20, 180, 10, 10 );
     l->setSpacing(3);
     l->setAlignment(Qt::AlignTop);
 
@@ -628,7 +627,7 @@ CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWid
     m_toggleUIButton->setCheckable( true );
     m_toggleUIButton->setChecked( false );
     m_toggleUIButton->setIcon( embed::getIconPixmap( "zoom" ) );
-    m_toggleUIButton->setFont( pointSize<8>( m_toggleUIButton->font() ) );
+    m_toggleUIButton->setFont(adjustedToPixelSize(m_toggleUIButton->font(), SMALL_FONT_SIZE));
     connect( m_toggleUIButton, SIGNAL( clicked(bool) ), this, SLOT( toggleUI( bool ) ) );
 
     m_toggleUIButton->setToolTip(
@@ -638,7 +637,7 @@ CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWid
     m_toggleParamsWindowButton = new QPushButton(tr("Params"), this);
     m_toggleParamsWindowButton->setIcon(embed::getIconPixmap("controller"));
     m_toggleParamsWindowButton->setCheckable(true);
-    m_toggleParamsWindowButton->setFont(pointSize<8>(m_toggleParamsWindowButton->font()));
+    m_toggleParamsWindowButton->setFont(adjustedToPixelSize(m_toggleParamsWindowButton->font(), SMALL_FONT_SIZE));
 #if CARLA_VERSION_HEX < CARLA_MIN_PARAM_VERSION
     m_toggleParamsWindowButton->setEnabled(false);
     m_toggleParamsWindowButton->setToolTip(tr("Available from Carla version 2.1 and up."));
@@ -743,8 +742,8 @@ CarlaParamsView::CarlaParamsView(CarlaInstrumentView* const instrumentView, QWid
 	m_curOutColumn(0),
 	m_curOutRow(0)
 {
-	QWidget* centralWidget = new QWidget(this);
-	QVBoxLayout* verticalLayout = new QVBoxLayout(centralWidget);
+	auto centralWidget = new QWidget(this);
+	auto verticalLayout = new QVBoxLayout(centralWidget);
 
 	// -- Toolbar
 	m_toolBarLayout = new QHBoxLayout();
@@ -787,9 +786,9 @@ CarlaParamsView::CarlaParamsView(CarlaInstrumentView* const instrumentView, QWid
 	m_toolBarLayout->addWidget(m_groupFilterCombo);
 
 	// -- Input params
-	QFrame* inputFrame = new QFrame(this);
-	QVBoxLayout* inputLayout = new QVBoxLayout(inputFrame);
-	QLabel* inputLabel = new QLabel("Input parameters", inputFrame);
+	auto inputFrame = new QFrame(this);
+	auto inputLayout = new QVBoxLayout(inputFrame);
+	auto inputLabel = new QLabel("Input parameters", inputFrame);
 
 	m_inputScrollArea = new QScrollArea(inputFrame);
 	m_inputScrollAreaWidgetContent = new QWidget();
@@ -813,9 +812,9 @@ CarlaParamsView::CarlaParamsView(CarlaInstrumentView* const instrumentView, QWid
 	inputLayout->addWidget(m_inputScrollArea);
 
 	// -- Output params
-	QFrame* outputFrame = new QFrame(this);
-	QVBoxLayout* outputLayout = new QVBoxLayout(outputFrame);
-	QLabel* outputLabel = new QLabel("Output parameters", outputFrame);
+	auto outputFrame = new QFrame(this);
+	auto outputLayout = new QVBoxLayout(outputFrame);
+	auto outputLabel = new QLabel("Output parameters", outputFrame);
 
 	m_outputScrollArea = new QScrollArea(outputFrame);
 	m_outputScrollAreaWidgetContent = new QWidget();
@@ -839,7 +838,7 @@ CarlaParamsView::CarlaParamsView(CarlaInstrumentView* const instrumentView, QWid
 	outputLayout->addWidget(m_outputScrollArea);
 
 	// -- QSplitter
-	QSplitter* splitter = new QSplitter(Qt::Vertical, this);
+	auto splitter = new QSplitter(Qt::Vertical, this);
 
 	// -- Add layout and widgets.
 	verticalLayout->addLayout(m_toolBarLayout);
@@ -848,8 +847,8 @@ CarlaParamsView::CarlaParamsView(CarlaInstrumentView* const instrumentView, QWid
 	verticalLayout->addWidget(splitter);
 
 	// -- Sub window
-	CarlaParamsSubWindow* win = new CarlaParamsSubWindow(getGUI()->mainWindow()->workspace()->viewport(), Qt::SubWindow |
-		Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowSystemMenuHint);
+	auto win = new CarlaParamsSubWindow(getGUI()->mainWindow()->workspace()->viewport(),
+		Qt::SubWindow | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowSystemMenuHint);
 	m_carlaInstrumentView->m_paramsSubWindow = getGUI()->mainWindow()->workspace()->addSubWindow(win);
 	m_carlaInstrumentView->m_paramsSubWindow->setSizePolicy(
 		QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
@@ -889,7 +888,7 @@ CarlaParamsView::~CarlaParamsView()
 	m_carlaInstrumentView->m_paramsView = nullptr;
 
 	// Clear models
-	if (m_carlaInstrument->m_paramModels.isEmpty() == false)
+	if (!m_carlaInstrument->m_paramModels.empty())
 	{
 		m_carlaInstrument->clearParamModels();
 	}
@@ -920,7 +919,7 @@ void CarlaParamsView::filterKnobs()
 	m_maxColumns = m_inputScrollArea->width() / maxKnobWidth;
 
 	QString text = m_paramsFilterLineEdit->text();
-	for (uint32_t i=0; i < m_knobs.count(); ++i)
+	for (uint32_t i = 0; i < m_knobs.size(); ++i)
 	{
 		// Don't show disabled (unused) knobs.
 		if (!m_carlaInstrument->m_paramModels[i]->enabled())
@@ -958,14 +957,14 @@ void CarlaParamsView::filterKnobs()
 	}
 
 	// Add spacer so all knobs go to top
-	QSpacerItem* verticalSpacer = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
+	auto verticalSpacer = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
 	m_inputScrollAreaLayout->addItem(verticalSpacer, m_curRow+1, 0, 1, 1);
 }
 
 void CarlaParamsView::refreshKnobs()
 {
 	// Make sure all the knobs are deleted.
-	for (uint32_t i=0; i < m_knobs.count(); ++i)
+	for (uint32_t i = 0; i < m_knobs.size(); ++i)
 	{
 		delete m_knobs[i]; // Delete knob widgets itself.
 	}
@@ -986,42 +985,40 @@ void CarlaParamsView::refreshKnobs()
 		m_maxKnobWidthPerGroup[i] = 0;
 	}
 
-	if (!m_carlaInstrument->m_paramModels.count()) { return; }
+	if (m_carlaInstrument->m_paramModels.empty()) { return; }
 
 	// Make room in QList m_knobs
-	m_knobs.reserve(m_carlaInstrument->m_paramModels.count());
+	m_knobs.reserve(m_carlaInstrument->m_paramModels.size());
 
 	QStringList groupNameList;
 	groupNameList.reserve(m_carlaInstrument->m_paramGroupCount);
 
-	for (uint32_t i=0; i < m_carlaInstrument->m_paramModels.count(); ++i)
+	for (const auto currentParamModel : m_carlaInstrument->m_paramModels)
 	{
-		bool enabled = m_carlaInstrument->m_paramModels[i]->enabled();
-		m_knobs.push_back(new Knob(knobDark_28, m_inputScrollAreaWidgetContent));
-		QString name = (*m_carlaInstrument->m_paramModels[i]).displayName();
-		m_knobs[i]->setHintText(name, "");
-		m_knobs[i]->setLabel(name);
-		m_knobs[i]->setObjectName(name); // this is being used for filtering the knobs.
+		bool enabled = currentParamModel->enabled();
+		const QString name = currentParamModel->displayName();
+
+		auto currentKnob = new Knob(KnobType::Dark28, name, m_inputScrollAreaWidgetContent, Knob::LabelRendering::LegacyFixedFontSize);
+		currentKnob->setHintText(name, "");
+		currentKnob->setObjectName(name); // this is being used for filtering the knobs.
 
 		// Set the newly created model to the knob.
-		m_knobs[i]->setModel(m_carlaInstrument->m_paramModels[i]);
-		m_knobs[i]->setEnabled(enabled);
+		currentKnob->setModel(currentParamModel);
+		currentKnob->setEnabled(enabled);
+
+		m_knobs.push_back(currentKnob);
 
 		if (enabled)
 		{
 			// Collect group names
-			if (!groupNameList.contains(m_carlaInstrument->m_paramModels[i]->groupName()))
+			if (!groupNameList.contains(currentParamModel->groupName()))
 			{
-				groupNameList.append(m_carlaInstrument->m_paramModels[i]->groupName());
+				groupNameList.append(currentParamModel->groupName());
 			}
 
-			// Store biggest knob width per group (so we can calc how many
-			// knobs we can horizontaly fit)
-			uint8_t groupId = m_carlaInstrument->m_paramModels[i]->groupId();
-			if (m_maxKnobWidthPerGroup[groupId] < m_knobs[i]->width())
-			{
-				m_maxKnobWidthPerGroup[groupId] = m_knobs[i]->width();
-			}
+			// Store biggest knob width per group (so we can calc how many knobs we can fit horizontally)
+			auto & maxGroupWidth = m_maxKnobWidthPerGroup[currentParamModel->groupId()];
+			maxGroupWidth = std::max(maxGroupWidth, static_cast<uint16_t>(currentKnob->width()));
 		}
 	}
 
@@ -1084,22 +1081,21 @@ void CarlaParamsView::addKnob(uint32_t index)
 void CarlaParamsView::clearKnobs()
 {
 	// Remove knobs from layout.
-	for (uint16_t i=0; i < m_knobs.count(); ++i)
+	for (uint16_t i = 0; i < m_knobs.size(); ++i)
 	{
 		m_knobs[i]->close();
 	}
 
 	// Remove spacers
-	QLayoutItem* item;
 	for (int16_t i=m_inputScrollAreaLayout->count() - 1; i > 0; i--)
 	{
-		item = m_inputScrollAreaLayout->takeAt(i);
+		auto item = m_inputScrollAreaLayout->takeAt(i);
 		if (item->widget()) {continue;}
 		delete item;
 	}
 	for (int16_t i=m_outputScrollAreaLayout->count() - 1; i > 0; i--)
 	{
-		item = m_outputScrollAreaLayout->takeAt(i);
+		auto item = m_outputScrollAreaLayout->takeAt(i);
 		if (item->widget()) {continue;}
 		delete item;
 	}
@@ -1111,3 +1107,8 @@ void CarlaParamsView::clearKnobs()
 	m_curOutColumn = 0;
 	m_curOutRow = 0;
 }
+
+
+} // namespace gui
+
+} // namespace lmms

@@ -30,6 +30,9 @@
 #include <QThread>
 
 
+namespace lmms
+{
+
 PlayHandle::PlayHandle(const Type type, f_cnt_t offset) :
 		m_type(type),
 		m_offset(offset),
@@ -52,7 +55,7 @@ void PlayHandle::doProcessing()
 	if( m_usesBuffer )
 	{
 		m_bufferReleased = false;
-		BufferManager::clear(m_playHandleBuffer, Engine::audioEngine()->framesPerPeriod());
+		zeroSampleFrames(m_playHandleBuffer, Engine::audioEngine()->framesPerPeriod());
 		play( buffer() );
 	}
 	else
@@ -67,7 +70,9 @@ void PlayHandle::releaseBuffer()
 	m_bufferReleased = true;
 }
 
-sampleFrame* PlayHandle::buffer()
+SampleFrame* PlayHandle::buffer()
 {
-	return m_bufferReleased ? nullptr : reinterpret_cast<sampleFrame*>(m_playHandleBuffer);
+	return m_bufferReleased ? nullptr : m_playHandleBuffer;
 };
+
+} // namespace lmms

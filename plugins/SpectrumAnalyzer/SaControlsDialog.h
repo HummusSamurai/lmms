@@ -26,13 +26,19 @@
 #define SACONTROLSDIALOG_H
 
 #include "EffectControlDialog.h"
-#include "fft_helpers.h"
 
+namespace lmms
+{
 class SaControls;
 class SaProcessor;
+}
+
+
+namespace lmms::gui
+{
+
 class SaSpectrumView;
 class SaWaterfallView;
-
 
 //! Top-level widget holding the configuration GUI and spectrum displays
 class SaControlsDialog : public EffectControlDialog
@@ -40,9 +46,8 @@ class SaControlsDialog : public EffectControlDialog
 	Q_OBJECT
 public:
 	explicit SaControlsDialog(SaControls *controls, SaProcessor *processor);
-	virtual ~SaControlsDialog() {}
+	~SaControlsDialog() override = default;
 
-	bool isResizable() const override {return true;}
 	QSize sizeHint() const override;
 
 private:
@@ -55,5 +60,8 @@ private:
 	SaSpectrumView *m_spectrum;
 	SaWaterfallView *m_waterfall;
 };
+
+
+} // namespace lmms::gui
 
 #endif // SACONTROLSDIALOG_H

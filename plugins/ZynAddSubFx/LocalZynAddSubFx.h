@@ -25,14 +25,23 @@
 #ifndef LOCAL_ZYNADDSUBFX_H
 #define LOCAL_ZYNADDSUBFX_H
 
+#include <array>
+
 #include "Note.h"
 
 class Master;
-class MidiEvent;
 class NulEngine;
+
+namespace lmms
+{
+
+class MidiEvent;
+class SampleFrame;
+
 
 class LocalZynAddSubFx
 {
+
 public:
 	LocalZynAddSubFx();
 	~LocalZynAddSubFx();
@@ -54,7 +63,7 @@ public:
 
 	void processMidiEvent( const MidiEvent& event );
 
-	void processAudio( sampleFrame * _out );
+	void processAudio( SampleFrame* _out );
 
 	inline Master * master()
 	{
@@ -67,10 +76,13 @@ protected:
 
 	std::string m_presetsDir;
 
-	int m_runningNotes[NumKeys];
+	std::array<int, NumKeys> m_runningNotes = {};
 	Master * m_master;
 	NulEngine* m_ioEngine;
 
 } ;
+
+
+} // namespace lmms
 
 #endif

@@ -41,43 +41,32 @@
 #include "InstrumentTrack.h"
 
 
-/*! The black / white order of keys as they appear on the keyboard.
- */
-static const Piano::KeyTypes KEY_ORDER[] =
+namespace lmms
 {
-//	C                CIS              D                DIS
-	Piano::WhiteKey, Piano::BlackKey, Piano::WhiteKey, Piano::BlackKey,
-//	E                F                FIS              G
-	Piano::WhiteKey, Piano::WhiteKey, Piano::BlackKey, Piano::WhiteKey,
-//	GIS              A                AIS              B
-	Piano::BlackKey, Piano::WhiteKey, Piano::BlackKey, Piano::WhiteKey
+
+
+//! @brief The black/white order of keys as they appear on the keyboard.
+static const auto KEY_ORDER = std::array
+{
+//	C                      CIS                    D                      DIS
+	Piano::KeyType::White, Piano::KeyType::Black, Piano::KeyType::White, Piano::KeyType::Black,
+//	E                      F                      FIS                    G
+	Piano::KeyType::White, Piano::KeyType::White, Piano::KeyType::Black, Piano::KeyType::White,
+//	GIS                    A                      AIS                    B
+	Piano::KeyType::Black, Piano::KeyType::White, Piano::KeyType::Black, Piano::KeyType::White
 } ;
 
 
-/*! \brief Create a new keyboard display
- *
- *  \param _it the InstrumentTrack window to attach to
- */
-Piano::Piano( InstrumentTrack* track ) :
-	Model( nullptr ),              /*!< base class ctor */
-	m_instrumentTrack( track ),
-	m_midiEvProc( track )        /*!< the InstrumentTrack Model */
-{
-	for( int i = 0; i < NumKeys; ++i )
-	{
-		m_pressedKeys[i] = false;
-	}
+Piano::Piano(InstrumentTrack* track)
+	: Model(nullptr)
+	, m_instrumentTrack(track)
+	, m_midiEvProc(track)
+{}
 
-}
 
-/*! \brief Turn a key on or off
- *
- *  \param key the key number to change
- *  \param state the state to set the key to
- */
-void Piano::setKeyState( int key, bool state )
+void Piano::setKeyState(int key, bool state)
 {
-	if( isValidKey( key ) )
+	if (isValidKey(key))
 	{
 		m_pressedKeys[key] = state;
 
@@ -86,54 +75,43 @@ void Piano::setKeyState( int key, bool state )
 }
 
 
-
-
-/*! \brief Handle a note being pressed on our keyboard display
- *
- *  \param key the key being pressed
- */
-void Piano::handleKeyPress( int key, int midiVelocity )
+void Piano::handleKeyPress(int key, int midiVelocity)
 {
-	if( midiVelocity == -1 )
+	if (midiVelocity == -1)
 	{
 		midiVelocity = m_instrumentTrack->midiPort()->baseVelocity();
 	}
-	if( isValidKey( key ) )
+	if (isValidKey(key))
 	{
-		m_midiEvProc->processInEvent( MidiEvent( MidiNoteOn, -1, key, midiVelocity ) );
+		m_midiEvProc->processInEvent(MidiEvent(MidiNoteOn, -1, key, midiVelocity));
 		m_pressedKeys[key] = true;
 	}
 }
 
 
-
-
-
-/*! \brief Handle a note being released on our keyboard display
- *
- *  \param key the key being releassed
- */
-void Piano::handleKeyRelease( int key )
+void Piano::handleKeyRelease(int key)
 {
-	if( isValidKey( key ) )
+	if (isValidKey(key))
 	{
-		m_midiEvProc->processInEvent( MidiEvent( MidiNoteOff, -1, key, 0 ) );
+		m_midiEvProc->processInEvent(MidiEvent(MidiNoteOff, -1, key, 0));
 		m_pressedKeys[key] = false;
 	}
 }
 
 
 
-bool Piano::isBlackKey( int key )
+bool Piano::isBlackKey(int key)
 {
 	int keyCode = key % KeysPerOctave;
 
-	return KEY_ORDER[keyCode] == Piano::BlackKey;
+	return KEY_ORDER[keyCode] == Piano::KeyType::Black;
 }
 
 
-bool Piano::isWhiteKey( int key )
+bool Piano::isWhiteKey(int key)
 {
-	return !isBlackKey( key );
+	return !isBlackKey(key);
 }
 
+
+} // namespace lmms

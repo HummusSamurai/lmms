@@ -35,14 +35,20 @@ extern "C" {
     #include "dcblock.h"
 }
 
+
+namespace lmms
+{
+
+
 class ReverbSCEffect : public Effect
 {
 public:
 	ReverbSCEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key );
-	virtual ~ReverbSCEffect();
-	virtual bool processAudioBuffer( sampleFrame* buf, const fpp_t frames );
+	~ReverbSCEffect() override;
 
-	virtual EffectControls* controls()
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+
+	EffectControls* controls() override
 	{
 		return &m_reverbSCControls;
 	}
@@ -57,5 +63,8 @@ private:
 	QMutex mutex;
 	friend class ReverbSCControls;
 } ;
+
+
+} // namespace lmms
 
 #endif

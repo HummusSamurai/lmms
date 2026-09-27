@@ -23,29 +23,32 @@
  *
  */
 
-
-#ifndef DATA_FILE_H
-#define DATA_FILE_H
+#ifndef LMMS_DATA_FILE_H
+#define LMMS_DATA_FILE_H
 
 #include <map>
 #include <QDomDocument>
+#include <vector>
 
 #include "lmms_export.h"
-#include "MemoryManager.h"
+
+class QTextStream;
+
+namespace lmms
+{
 
 class ProjectVersion;
-class QTextStream;
+
 
 class LMMS_EXPORT DataFile : public QDomDocument
 {
-	MM_OPERATORS
 
 	using UpgradeMethod = void(DataFile::*)();
 
 public:
-	enum Types
+	enum class Type
 	{
-		UnknownType,
+		Unknown,
 		SongProject,
 		SongProjectTemplate,
 		InstrumentTrackSettings,
@@ -53,28 +56,36 @@ public:
 		ClipboardData,
 		JournalData,
 		EffectSettings,
-		MidiClip,
-		TypeCount
+		MidiClip
 	} ;
-	typedef Types Type;
 
 	DataFile( const QString& fileName );
 	DataFile( const QByteArray& data );
 	DataFile( Type type );
 
-	virtual ~DataFile();
+	virtual ~DataFile() = default;
 
-	///
-	/// \brief validate
-	/// performs basic validation, compared to file extension.
-	///
+	//! @brief Performs basic validation, compared to file extension
 	bool validate( QString extension );
 
 	QString nameWithExtension( const QString& fn ) const;
 
 	void write( QTextStream& strm );
 	bool writeFile(const QString& fn, bool withResources = false);
-	bool copyResources(const QString& resourcesDir); //!< Copies resources to the resourcesDir and changes the DataFile to use local paths to them
+
+	//! @brief Copies resources to @p resourcesDir and changes the
+	//! DataFile to use local paths to them
+	bool copyResources(const QString& resourcesDir);
+
+	//! @brief Checks whether the XML tree of a @ref DataFile has (potentially unsafe) local paths
+	//!
+	//! This recursive method will go through all XML nodes of the DataFile and check whether any of them have local paths.
+	//! If they are not on our list of elements that can have local paths we return true, indicating that we potentially
+	//! have plugins with local paths that would be a security issue. The Song class can then abort loading this project.
+	//! @param parent The parent node being iterated. When called without arguments, this will be an empty element that
+	//! will be ignored (since the second parameter will be true).
+	//! @param firstCall Defaults to true, and indicates to this recursive method whether this is the first call. If it is
+	//! it will use the root element as the parent.
 	bool hasLocalPlugins(QDomElement parent = QDomElement(), bool firstCall = true) const;
 
 	QDomElement& content()
@@ -100,6 +111,8 @@ private:
 
 	void cleanMetaNodes( QDomElement de );
 
+	void mapSrcAttributeInElementsWithResources(const QMap<QString, QString>& map);
+
 	// helper upgrade routines
 	void upgrade_0_2_1_20070501();
 	void upgrade_0_2_1_20070508();
@@ -120,10 +133,32 @@ private:
 	void upgrade_1_3_0();
 	void upgrade_noHiddenClipNames();
 	void upgrade_automationNodes();
+
+	//! @brief Note range has been extended to match MIDI specification
+	//!
+	//! The non-standard note range previously affected all MIDI-based instruments
+	//! except OpulenZ, and made them sound an octave lower than they should (#1857).
 	void upgrade_extendedNoteRange();
+
+	//! @brief TripleOscillator switched to using high-quality, alias-free oscillators by default
+	//!
+	//! Older projects were made without this feature and would sound differently if loaded
+	//! with the new default setting. This upgrade routine preserves their old behavior.
 	void upgrade_defaultTripleOscillatorHQ();
+
 	void upgrade_mixerRename();
 	void upgrade_bbTcoRename();
+	void upgrade_sampleAndHold();
+
+	//! Update MIDI CC indexes, so that they are counted from 0. Older releases of LMMS count the CCs from 1.
+	void upgrade_midiCCIndexing();
+
+	void upgrade_loopsRename();
+	void upgrade_noteTypes();
+	void upgrade_fixCMTDelays();
+	void upgrade_fixBassLoopsTypo();
+	void findProblematicLadspaPlugins();
+	void upgrade_noHiddenAutomationTracks();
 
 	// List of all upgrade methods
 	static const std::vector<UpgradeMethod> UPGRADE_METHODS;
@@ -131,28 +166,21 @@ private:
 	static const std::vector<ProjectVersion> UPGRADE_VERSIONS;
 
 	// Map with DOM elements that access resources (for making bundles)
-	typedef std::map<QString, std::vector<QString>> ResourcesMap;
+	using ResourcesMap = std::map<QString, std::vector<QString>>;
 	static const ResourcesMap ELEMENTS_WITH_RESOURCES;
 
 	void upgrade();
 
 	void loadData( const QByteArray & _data, const QString & _sourceFile );
 
-
-	struct LMMS_EXPORT typeDescStruct
-	{
-		Type m_type;
-		QString m_name;
-	} ;
-	static typeDescStruct s_types[TypeCount];
-
 	QString m_fileName; //!< The origin file name or "" if this DataFile didn't originate from a file
 	QDomElement m_content;
 	QDomElement m_head;
 	Type m_type;
 	unsigned int m_fileVersion;
-
 } ;
 
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_DATA_FILE_H

@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef AUDIO_ALSA_H
-#define AUDIO_ALSA_H
+#ifndef LMMS_AUDIO_ALSA_H
+#define LMMS_AUDIO_ALSA_H
 
 #include "lmmsconfig.h"
 
@@ -37,6 +37,8 @@
 
 #include "AudioDevice.h"
 
+namespace lmms
+{
 
 class AudioAlsa : public QThread, public AudioDevice
 {
@@ -52,7 +54,7 @@ public:
 			m_deviceName(deviceName),
 			m_deviceDescription(deviceDescription)
 		{}
-		~DeviceInfo() {}
+		~DeviceInfo() = default;
 
 		QString const & getDeviceName() const { return m_deviceName; }
 		QString const & getDeviceDescription() const { return m_deviceDescription; }
@@ -63,11 +65,11 @@ public:
 
 	};
 
-	typedef std::vector<DeviceInfo> DeviceInfoCollection;
+	using DeviceInfoCollection = std::vector<DeviceInfo>;
 
 public:
 	AudioAlsa( bool & _success_ful, AudioEngine* audioEngine );
-	virtual ~AudioAlsa();
+	~AudioAlsa() override;
 
 	inline static QString name()
 	{
@@ -77,12 +79,20 @@ public:
 
 	static QString probeDevice();
 
+	//! @brief Creates a list of all available devices.
+	//!
+	//! Uses the hints API of ALSA to collect all devices. This also includes plug devices. The reason to collect these
+	//! and not the raw hardware devices (e.g. hw:0,0) is that hardware devices often have a very limited number of
+	//! supported formats, etc. Plugs on the other hand are software components that map all types of formats and inputs
+	//! to the hardware and therefore they are much more flexible and more what we want.
+	//!
+	//! @see Further helpful info at [http://jan.newmarch.name/LinuxSound/Sampled/Alsa](https://web.archive.org/web/20211204221331/http://jan.newmarch.name/LinuxSound/Sampled/Alsa/).
+	//! @return A collection of devices found on the system.
 	static DeviceInfoCollection getAvailableDevices();
 
 private:
-	void startProcessing() override;
-	void stopProcessing() override;
-	void applyQualitySettings() override;
+	void startProcessingImpl() override;
+	void stopProcessingImpl() override;
 	void run() override;
 
 	int setHWParams( const ch_cnt_t _channels, snd_pcm_access_t _access );
@@ -97,11 +107,10 @@ private:
 
 	snd_pcm_hw_params_t * m_hwParams;
 	snd_pcm_sw_params_t * m_swParams;
-
-	bool m_convertEndian;
-
 } ;
 
-#endif
+} // namespace lmms
 
-#endif
+#endif // LMMS_HAVE_ALSA
+
+#endif // LMMS_AUDIO_ALSA_H

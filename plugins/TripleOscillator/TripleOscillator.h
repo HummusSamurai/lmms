@@ -26,30 +26,39 @@
 #ifndef _TRIPLE_OSCILLATOR_H
 #define _TRIPLE_OSCILLATOR_H
 
+#include <memory>
+
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "AutomatableModel.h"
+#include "OscillatorConstants.h"
+#include "SampleBuffer.h"
+
+namespace lmms
+{
 
 
-class automatableButtonGroup;
-class Knob;
-class NotePlayHandle;
+class NotePlayHandle;  // IWYU pragma: keep
 class Oscillator;
+
+
+namespace gui
+{
+class AutomatableButtonGroup;
+class Knob;
 class PixmapButton;
-class SampleBuffer;
+class TripleOscillatorView;
+} // namespace gui
+
 
 const int NUM_OF_OSCILLATORS = 3;
 
 
 class OscillatorObject : public Model
 {
-	MM_OPERATORS
 	Q_OBJECT
 public:
 	OscillatorObject( Model * _parent, int _idx );
-	virtual ~OscillatorObject();
-
-
 private:
 	FloatModel m_volumeModel;
 	FloatModel m_panModel;
@@ -61,7 +70,8 @@ private:
 	IntModel m_waveShapeModel;
 	IntModel m_modulationAlgoModel;
 	BoolModel m_useWaveTableModel;
-	SampleBuffer* m_sampleBuffer;
+	std::shared_ptr<const SampleBuffer> m_sampleBuffer = SampleBuffer::emptyBuffer();
+	std::shared_ptr<const OscillatorConstants::waveform_t> m_userAntiAliasWaveTable;
 
 	float m_volumeLeft;
 	float m_volumeRight;
@@ -75,7 +85,7 @@ private:
 	bool m_useWaveTable;
 
 	friend class TripleOscillator;
-	friend class TripleOscillatorView;
+	friend class gui::TripleOscillatorView;
 
 
 private slots:
@@ -98,24 +108,24 @@ class TripleOscillator : public Instrument
 	Q_OBJECT
 public:
 	TripleOscillator( InstrumentTrack * _track );
-	virtual ~TripleOscillator();
+	~TripleOscillator() override = default;
 
-	virtual void playNote( NotePlayHandle * _n,
-						sampleFrame * _working_buffer );
-	virtual void deleteNotePluginData( NotePlayHandle * _n );
+	void playNote( NotePlayHandle * _n,
+						SampleFrame* _working_buffer ) override;
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 
-	virtual void saveSettings( QDomDocument & _doc, QDomElement & _parent );
-	virtual void loadSettings( const QDomElement & _this );
+	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
+	void loadSettings( const QDomElement & _this ) override;
 
-	virtual QString nodeName() const;
+	QString nodeName() const override;
 
-	virtual f_cnt_t desiredReleaseFrames() const
+	float desiredReleaseTimeMs() const override
 	{
-		return( 128 );
+		return 3.f;
 	}
 
-	virtual PluginView * instantiateView( QWidget * _parent );
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 
 protected slots:
@@ -127,16 +137,18 @@ private:
 
 	struct oscPtr
 	{
-		MM_OPERATORS
 		Oscillator * oscLeft;
 		Oscillator * oscRight;
 	} ;
 
 
-	friend class TripleOscillatorView;
+	friend class gui::TripleOscillatorView;
 
 } ;
 
+
+namespace gui
+{
 
 
 class TripleOscillatorView : public InstrumentViewFixedSize
@@ -144,18 +156,17 @@ class TripleOscillatorView : public InstrumentViewFixedSize
 	Q_OBJECT
 public:
 	TripleOscillatorView( Instrument * _instrument, QWidget * _parent );
-	virtual ~TripleOscillatorView();
+	~TripleOscillatorView() override = default;
 
 
 private:
-	virtual void modelChanged();
+	void modelChanged() override;
 
-	automatableButtonGroup * m_mod1BtnGrp;
-	automatableButtonGroup * m_mod2BtnGrp;
+	AutomatableButtonGroup * m_mod1BtnGrp;
+	AutomatableButtonGroup * m_mod2BtnGrp;
 
 	struct OscillatorKnobs
 	{
-		MM_OPERATORS
 		OscillatorKnobs( Knob * v,
 					Knob * p,
 					Knob * c,
@@ -164,7 +175,7 @@ private:
 					Knob * po,
 					Knob * spd,
 					PixmapButton * uwb,
-					automatableButtonGroup * wsbg,
+					AutomatableButtonGroup * wsbg,
 					PixmapButton * wt) :
 			m_volKnob( v ),
 			m_panKnob( p ),
@@ -178,9 +189,7 @@ private:
 			m_multiBandWaveTableButton( wt )
 		{
 		}
-		OscillatorKnobs()
-		{
-		}
+		OscillatorKnobs() = default;
 		Knob * m_volKnob;
 		Knob * m_panKnob;
 		Knob * m_coarseKnob;
@@ -189,7 +198,7 @@ private:
 		Knob * m_phaseOffsetKnob;
 		Knob * m_stereoPhaseDetuningKnob;
 		PixmapButton * m_userWaveButton;
-		automatableButtonGroup * m_waveShapeBtnGrp;
+		AutomatableButtonGroup * m_waveShapeBtnGrp;
 		PixmapButton * m_multiBandWaveTableButton;
 
 	} ;
@@ -198,5 +207,8 @@ private:
 } ;
 
 
+} // namespace gui
+
+} // namespace lmms
 
 #endif

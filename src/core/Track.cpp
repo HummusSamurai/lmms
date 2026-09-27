@@ -43,28 +43,18 @@
 #include "Song.h"
 
 
-/*! \brief Create a new (empty) track object
- *
- *  The track object is the whole track, linking its contents, its
- *  automation, name, type, and so forth.
- *
- * \param type The type of track (Song Editor or Pattern Editor)
- * \param tc The track Container object to encapsulate in this track.
- *
- * \todo check the definitions of all the properties - are they OK?
- */
-Track::Track( TrackTypes type, TrackContainer * tc ) :
-	Model( tc ),                   /*!< The track Model */
-	m_trackContainer( tc ),        /*!< The track container object */
-	m_type( type ),                /*!< The track type */
-	m_name(),                       /*!< The track's name */
-	m_mutedModel( false, this, tr( "Mute" ) ), /*!< For controlling track muting */
-	m_soloModel( false, this, tr( "Solo" ) ), /*!< For controlling track soloing */
-	m_simpleSerializingMode( false ),
-	m_clips(),        /*!< The clips (segments) */
-	m_color( 0, 0, 0 ),
-	m_hasColor( false )
+namespace lmms
 {
+
+Track::Track(Type type, TrackContainer* tc)
+	: Model(tc)
+	, m_trackContainer(tc)
+	, m_type(type)
+	, m_name()
+	, m_mutedModel(false, this, tr("Mute"))
+	, m_soloModel(false, this, tr("Solo"))
+	, m_clips()
+{	
 	m_trackContainer->addTrack( this );
 	m_height = -1;
 }
@@ -72,18 +62,14 @@ Track::Track( TrackTypes type, TrackContainer * tc ) :
 
 
 
-/*! \brief Destroy this track
- *
- *  Delete the clips and remove this track from the track container.
- */
 Track::~Track()
 {
 	lock();
 	emit destroyedTrack();
 
-	while( !m_clips.isEmpty() )
+	while (!m_clips.empty())
 	{
-		delete m_clips.last();
+		delete m_clips.back();
 	}
 
 	m_trackContainer->removeTrack( this );
@@ -93,12 +79,7 @@ Track::~Track()
 
 
 
-/*! \brief Create a track based on the given track type and container.
- *
- *  \param tt The type of track to create
- *  \param tc The track container to attach to
- */
-Track * Track::create( TrackTypes tt, TrackContainer * tc )
+Track * Track::create( Type tt, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
@@ -106,14 +87,14 @@ Track * Track::create( TrackTypes tt, TrackContainer * tc )
 
 	switch( tt )
 	{
-		case InstrumentTrack: t = new ::InstrumentTrack( tc ); break;
-		case PatternTrack: t = new ::PatternTrack( tc ); break;
-		case SampleTrack: t = new ::SampleTrack( tc ); break;
-//		case EVENT_TRACK:
-//		case VIDEO_TRACK:
-		case AutomationTrack: t = new ::AutomationTrack( tc ); break;
-		case HiddenAutomationTrack:
-						t = new ::AutomationTrack( tc, true ); break;
+		case Type::Instrument: t = new class InstrumentTrack( tc ); break;
+		case Type::Pattern: t = new class PatternTrack( tc ); break;
+		case Type::Sample: t = new class SampleTrack( tc ); break;
+//		case Type::Event:
+//		case Type::Video:
+		case Type::Automation: t = new class AutomationTrack( tc ); break;
+		case Type::HiddenAutomation:
+						t = new class AutomationTrack( tc, true ); break;
 		default: break;
 	}
 
@@ -132,17 +113,12 @@ Track * Track::create( TrackTypes tt, TrackContainer * tc )
 
 
 
-/*! \brief Create a track inside TrackContainer from track type in a QDomElement and restore state from XML
- *
- *  \param element The QDomElement containing the type of track to create
- *  \param tc The track container to attach to
- */
 Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
 	Track * t = create(
-		static_cast<TrackTypes>( element.attribute( "type" ).toInt() ),
+		static_cast<Type>( element.attribute( "type" ).toInt() ),
 									tc );
 	if( t != nullptr )
 	{
@@ -157,9 +133,6 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 
 
 
-/*! \brief Clone a track from this track
- *
- */
 Track* Track::clone()
 {
 	// Save track to temporary XML and load it to create a new identical track
@@ -173,28 +146,13 @@ Track* Track::clone()
 }
 
 
-
-
-
-
-/*! \brief Save this track's settings to file
- *
- *  We save the track type and its muted state and solo state, then append the track-
- *  specific settings.  Then we iterate through the clips
- *  and save all their states in turn.
- *
- *  \param doc The QDomDocument to use to save
- *  \param element The The QDomElement to save into
- *  \todo Does this accurately describe the parameters?  I think not!?
- *  \todo Save the track height
- */
-void Track::saveSettings( QDomDocument & doc, QDomElement & element )
+void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 {
-	if( !m_simpleSerializingMode )
+	if (!presetMode)
 	{
 		element.setTagName( "track" );
 	}
-	element.setAttribute( "type", type() );
+	element.setAttribute( "type", static_cast<int>(type()) );
 	element.setAttribute( "name", name() );
 	m_mutedModel.saveSettings( doc, element, "muted" );
 	m_soloModel.saveSettings( doc, element, "solo" );
@@ -206,48 +164,32 @@ void Track::saveSettings( QDomDocument & doc, QDomElement & element )
 		element.setAttribute( "trackheight", m_height );
 	}
 	
-	if( m_hasColor )
+	if (m_color.has_value())
 	{
-		element.setAttribute( "color", m_color.name() );
+		element.setAttribute("color", m_color->name());
 	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
 	// let actual track (InstrumentTrack, PatternTrack, SampleTrack etc.) save its settings
 	element.appendChild( tsDe );
-	saveTrackSpecificSettings( doc, tsDe );
+	saveTrackSpecificSettings(doc, tsDe, presetMode);
 
-	if( m_simpleSerializingMode )
+	if (presetMode)
 	{
-		m_simpleSerializingMode = false;
 		return;
 	}
 
 	// now save settings of all Clip's
-	for( clipVector::const_iterator it = m_clips.begin();
-				it != m_clips.end(); ++it )
+	for (const auto& clip : m_clips)
 	{
-		( *it )->saveState( doc, element );
+		clip->saveState(doc, element);
 	}
 }
 
 
-
-
-/*! \brief Load the settings from a file
- *
- *  We load the track's type and muted state and solo state, then clear out our
- *  current Clip.
- *
- *  Then we step through the QDomElement's children and load the
- *  track-specific settings and clip states from it
- *  one at a time.
- *
- *  \param element the QDomElement to load track settings from
- *  \todo Load the track height.
- */
-void Track::loadSettings( const QDomElement & element )
+void Track::loadTrack(const QDomElement& element, bool presetMode)
 {
-	if( element.attribute( "type" ).toInt() != type() )
+	if( static_cast<Type>(element.attribute( "type" ).toInt()) != type() )
 	{
 		qWarning( "Current track-type does not match track-type of "
 							"settings-node!\n" );
@@ -262,17 +204,12 @@ void Track::loadSettings( const QDomElement & element )
 	// Older project files that didn't have this attribute will set the value to false (issue 5562)
 	m_mutedBeforeSolo = QVariant( element.attribute( "mutedBeforeSolo", "0" ) ).toBool();
 
-	if( element.hasAttribute( "color" ) )
+	if (element.hasAttribute("color"))
 	{
-		QColor newColor = QColor(element.attribute("color"));
-		setColor(newColor);
-	}
-	else
-	{
-		resetColor();
+		setColor(QColor{element.attribute("color")});
 	}
 
-	if( m_simpleSerializingMode )
+	if (presetMode)
 	{
 		QDomNode node = element.firstChild();
 		while( !node.isNull() )
@@ -284,14 +221,13 @@ void Track::loadSettings( const QDomElement & element )
 			}
 			node = node.nextSibling();
 		}
-		m_simpleSerializingMode = false;
+
 		return;
 	}
 
-	while( !m_clips.empty() )
 	{
-		delete m_clips.front();
-//		m_clips.erase( m_clips.begin() );
+		auto guard = Engine::audioEngine()->requestChangesGuard();
+		deleteClips();
 	}
 
 	QDomNode node = element.firstChild();
@@ -322,13 +258,31 @@ void Track::loadSettings( const QDomElement & element )
 	}
 }
 
+void Track::savePreset(QDomDocument & doc, QDomElement & element)
+{
+	saveTrack(doc, element, true);
+}
+
+void Track::loadPreset(const QDomElement & element)
+{
+	loadTrack(element, true);
+}
+
+void Track::saveSettings(QDomDocument& doc, QDomElement& element)
+{
+	// Assume that everything should be saved if we are called through SerializingObject::saveSettings
+	saveTrack(doc, element, false);
+}
+
+void Track::loadSettings(const QDomElement& element)
+{
+	// Assume that everything should be loaded if we are called through SerializingObject::loadSettings 
+	loadTrack(element, false);
+}
 
 
 
-/*! \brief Add another Clip into this track
- *
- *  \param clip The Clip to attach to this track.
- */
+
 Clip * Track::addClip( Clip * clip )
 {
 	m_clips.push_back( clip );
@@ -341,10 +295,6 @@ Clip * Track::addClip( Clip * clip )
 
 
 
-/*! \brief Remove a given Clip from this track
- *
- *  \param clip The Clip to remove from this track.
- */
 void Track::removeClip( Clip * clip )
 {
 	clipVector::iterator it = std::find( m_clips.begin(), m_clips.end(), clip );
@@ -360,48 +310,25 @@ void Track::removeClip( Clip * clip )
 }
 
 
-/*! \brief Remove all Clips from this track */
 void Track::deleteClips()
 {
-	while( ! m_clips.isEmpty() )
+	while (!m_clips.empty())
 	{
-		delete m_clips.first();
+		delete m_clips.front();
 	}
 }
 
 
-/*! \brief Return the number of clips we contain
- *
- *  \return the number of clips we currently contain.
- */
-int Track::numOfClips()
-{
-	return m_clips.size();
-}
 
 
-
-
-/*! \brief Get a Clip by number
- *
- *  If the Clip number is less than our Clip array size then fetch that
- *  numbered object from the array.  Otherwise we warn the user that
- *  we've somehow requested a Clip that is too large, and create a new
- *  Clip for them.
- *  \param clipNum The number of the Clip to fetch.
- *  \return the given Clip or a new one if out of range.
- *  \todo reject Clip numbers less than zero.
- *  \todo if we create a Clip here, should we somehow attach it to the
- *     track?
- */
-Clip * Track::getClip( int clipNum )
+auto Track::getClip(std::size_t clipNum) -> Clip*
 {
 	if( clipNum < m_clips.size() )
 	{
 		return m_clips[clipNum];
 	}
-	printf( "called Track::getClip( %d ), "
-			"but Clip %d doesn't exist\n", clipNum, clipNum );
+	printf( "called Track::getClip( %zu ), "
+			"but Clip %zu doesn't exist\n", clipNum, clipNum );
 	return createClip( clipNum * TimePos::ticksPerBar() );
 
 }
@@ -409,11 +336,6 @@ Clip * Track::getClip( int clipNum )
 
 
 
-/*! \brief Determine the given Clip's number in our array.
- *
- *  \param clip The Clip to search for.
- *  \return its number in our array.
- */
 int Track::getClipNum( const Clip * clip )
 {
 //	for( int i = 0; i < getTrackContentWidget()->numOfClips(); ++i )
@@ -433,17 +355,6 @@ int Track::getClipNum( const Clip * clip )
 
 
 
-/*! \brief Retrieve a list of clips that fall within a period.
- *
- *  Here we're interested in a range of clips that intersect
- *  the given time period.
- *
- *  We return the Clips we find in order by time, earliest Clips first.
- *
- *  \param clipV The list to contain the found clips.
- *  \param start The MIDI start time of the range.
- *  \param end   The MIDI endi time of the range.
- */
 void Track::getClipsInRange( clipVector & clipV, const TimePos & start,
 							const TimePos & end )
 {
@@ -464,14 +375,6 @@ void Track::getClipsInRange( clipVector & clipV, const TimePos & start,
 
 
 
-/*! \brief Swap the position of two clips.
- *
- *  First, we arrange to swap the positions of the two Clips in the
- *  clips list.  Then we swap their start times as well.
- *
- *  \param clipNum1 The first Clip to swap.
- *  \param clipNum2 The second Clip to swap.
- */
 void Track::swapPositionOfClips( int clipNum1, int clipNum2 )
 {
 	qSwap( m_clips[clipNum1], m_clips[clipNum2] );
@@ -498,24 +401,17 @@ void Track::createClipsForPattern(int pattern)
 
 
 
-/*! \brief Move all the clips after a certain time later by one bar.
- *
- *  \param pos The time at which we want to insert the bar.
- *  \todo if we stepped through this list last to first, and the list was
- *    in ascending order by Clip time, once we hit a Clip that was earlier
- *    than the insert time, we could fall out of the loop early.
- */
+//! @todo If we stepped through this list last to first, and the list was in ascending order by Clip time, once we hit
+//! a Clip that was earlier than the insert time, we could fall out of the loop early.
 void Track::insertBar( const TimePos & pos )
 {
 	// we'll increase the position of every Clip, positioned behind pos, by
 	// one bar
-	for( clipVector::iterator it = m_clips.begin();
-				it != m_clips.end(); ++it )
+	for (const auto& clip : m_clips)
 	{
-		if( ( *it )->startPosition() >= pos )
+		if (clip->startPosition() >= pos)
 		{
-			( *it )->movePosition( (*it)->startPosition() +
-						TimePos::ticksPerBar() );
+			clip->movePosition(clip->startPosition() + TimePos::ticksPerBar());
 		}
 	}
 }
@@ -523,19 +419,15 @@ void Track::insertBar( const TimePos & pos )
 
 
 
-/*! \brief Move all the clips after a certain time earlier by one bar.
- *
- *  \param pos The time at which we want to remove the bar.
- */
 void Track::removeBar( const TimePos & pos )
 {
 	// we'll decrease the position of every Clip, positioned behind pos, by
 	// one bar
-	for( clipVector::iterator it = m_clips.begin(); it != m_clips.end(); ++it )
+	for (const auto& clip : m_clips)
 	{
-		if( ( *it )->startPosition() >= pos )
+		if (clip->startPosition() >= pos)
 		{
-			(*it)->movePosition((*it)->startPosition() - TimePos::ticksPerBar());
+			clip->movePosition(clip->startPosition() - TimePos::ticksPerBar());
 		}
 	}
 }
@@ -543,25 +435,18 @@ void Track::removeBar( const TimePos & pos )
 
 
 
-/*! \brief Return the length of the entire track in bars
- *
- *  We step through our list of Clips and determine their end position,
- *  keeping track of the latest time found in ticks.  Then we return
- *  that in bars by dividing by the number of ticks per bar.
- */
 bar_t Track::length() const
 {
 	// find last end-position
 	tick_t last = 0;
-	for( clipVector::const_iterator it = m_clips.begin(); it != m_clips.end(); ++it )
+	for (const auto& clip : m_clips)
 	{
-		if( Engine::getSong()->isExporting() &&
-				( *it )->isMuted() )
+		if (Engine::getSong()->isExporting() && clip->isMuted())
 		{
 			continue;
 		}
 
-		const tick_t cur = ( *it )->endPosition();
+		const tick_t cur = clip->endPosition();
 		if( cur > last )
 		{
 			last = cur;
@@ -573,23 +458,16 @@ bar_t Track::length() const
 
 
 
-/*! \brief Invert the track's solo state.
- *
- *  We have to go through all the tracks determining if any other track
- *  is already soloed.  Then we have to save the mute state of all tracks,
- *  and set our mute state to on and all the others to off.
- */
 void Track::toggleSolo()
 {
 	const TrackContainer::TrackList & tl = m_trackContainer->tracks();
 
 	bool soloBefore = false;
-	for( TrackContainer::TrackList::const_iterator it = tl.begin();
-							it != tl.end(); ++it )
+	for (const auto& track : tl)
 	{
-		if( *it != this )
+		if (track != this)
 		{
-			if( ( *it )->m_soloModel.value() )
+			if (track->m_soloModel.value())
 			{
 				soloBefore = true;
 				break;
@@ -601,58 +479,65 @@ void Track::toggleSolo()
 	// Should we use the new behavior of solo or the older/legacy one?
 	const bool soloLegacyBehavior = ConfigManager::inst()->value("app", "sololegacybehavior", "0").toInt();
 
-	for( TrackContainer::TrackList::const_iterator it = tl.begin();
-							it != tl.end(); ++it )
+	for (const auto& track : tl)
 	{
-		if( solo )
+		if (solo)
 		{
 			// save mute-state in case no track was solo before
-			if( !soloBefore )
+			if (!soloBefore)
 			{
-				( *it )->m_mutedBeforeSolo = ( *it )->isMuted();
+				track->m_mutedBeforeSolo = track->isMuted();
 			}
 			// Don't mute AutomationTracks (keep their original state) unless we are on the sololegacybehavior mode
-			if( *it == this )
+			if (track == this)
 			{
-				( *it )->setMuted( false );
+				track->setMuted(false);
 			}
-			else if( soloLegacyBehavior || ( *it )->type() != AutomationTrack )
+			else if (soloLegacyBehavior || track->type() != Type::Automation)
 			{
-				( *it )->setMuted( true );
+				track->setMuted(true);
 			}
-			if( *it != this )
+			if (track != this)
 			{
-				( *it )->m_soloModel.setValue( false );
+				track->m_soloModel.setValue(false);
 			}
 		}
-		else if( !soloBefore )
+		else if (!soloBefore)
 		{
 			// Unless we are on the sololegacybehavior mode, only restores the
 			// mute state if the track isn't an Automation Track
-			if( soloLegacyBehavior || ( *it )->type() != AutomationTrack )
+			if (soloLegacyBehavior || track->type() != Type::Automation)
 			{
-				( *it )->setMuted( ( *it )->m_mutedBeforeSolo );
+				track->setMuted(track->m_mutedBeforeSolo);
 			}
 		}
 	}
 }
 
-void Track::setColor(const QColor& c)
+void Track::setColor(const std::optional<QColor>& color)
 {
-	m_hasColor = true;
-	m_color = c;
+	m_color = color;
 	emit colorChanged();
 }
-
-void Track::resetColor()
-{
-	m_hasColor = false;
-	emit colorChanged();
-}
-
 
 BoolModel *Track::getMutedModel()
 {
 	return &m_mutedModel;
 }
 
+void Track::setName(const QString& newName)
+{
+	if (m_name != newName)
+	{
+		m_name = newName;
+
+		if (auto song = Engine::getSong())
+		{
+			song->setModified();
+		}
+		
+		emit nameChanged();
+	}
+}
+
+} // namespace lmms

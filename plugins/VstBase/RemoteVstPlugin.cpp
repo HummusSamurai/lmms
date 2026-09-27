@@ -30,6 +30,7 @@
  *
  */
 
+ #include <cmath>
 
 #include "lmmsconfig.h"
 
@@ -40,10 +41,6 @@
 #endif
 
 #ifdef LMMS_BUILD_LINUX
-
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -57,7 +54,7 @@
 #include <wine/exception.h>
 #endif
 
-#endif
+#endif // LMMS_BUILD_LINUX
 
 #ifndef NATIVE_LINUX_VST
 #define USE_WS_PREFIX
@@ -87,19 +84,16 @@
 #undef Unsorted
 #endif
 
-#ifdef USE_MINGW_THREADS_REPLACEMENT
-#	include <mingw.mutex.h>
-#else
-#	include <mutex>
-#endif
+#include <mutex>
 
 #include <algorithm>
-#include <vector>
+#include <cstdint>
+#include <cstring>
+#include <iostream>
 #include <queue>
 #include <string>
-#include <iostream>
-#include <string>
-#include <cstring>
+#include <vector>
+#include <cassert>
 
 #include <aeffectx.h>
 
@@ -109,46 +103,37 @@
 
 struct ERect
 {
-    short top;
-    short left;
-    short bottom;
-    short right;
-} ;
+	std::int16_t top;
+	std::int16_t left;
+	std::int16_t bottom;
+	std::int16_t right;
+};
 
 #endif
 
 
-#include "lmms_basics.h"
+#include "LmmsTypes.h"
 #include "Midi.h"
 #include "communication.h"
 #include "IoHelper.h"
 
 #include "VstSyncData.h"
 
-#ifdef LMMS_BUILD_WIN32
-#define USE_QT_SHMEM
-#endif
-
-#ifndef USE_QT_SHMEM
-#include <cstdio>
-#include <cstdlib>
-#include <sys/types.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#endif
-
 using namespace std;
 
-static VstHostLanguages hlang = LanguageEnglish;
+static lmms::VstHostLanguage hlang = lmms::VstHostLanguage::English;
 
 static bool EMBED = false;
 static bool EMBED_X11 = false;
 static bool EMBED_WIN32 = false;
 static bool HEADLESS = false;
 
+namespace lmms
+{
 class RemoteVstPlugin;
+}
 
-RemoteVstPlugin * __plugin = nullptr;
+lmms::RemoteVstPlugin * __plugin = nullptr;
 
 #ifndef NATIVE_LINUX_VST
 HWND __MessageHwnd = nullptr;
@@ -156,6 +141,10 @@ DWORD __processingThreadId = 0;
 #else
 pthread_t __processingThreadId = 0;
 #endif
+
+namespace lmms
+{
+
 
 #ifdef _WIN32
 //Returns the last Win32 error, in string format. Returns an empty string if there is no error.
@@ -182,7 +171,7 @@ class RemoteVstPlugin : public RemotePluginClient
 {
 public:
 #ifdef SYNC_WITH_SHM_FIFO
-	RemoteVstPlugin( key_t _shm_in, key_t _shm_out );
+	RemoteVstPlugin( const std::string& _shm_in, const std::string& _shm_out );
 #else
 	RemoteVstPlugin( const char * socketPath );
 #endif
@@ -196,7 +185,7 @@ public:
 	void hideEditor();
 	void destroyEditor();
 
-	virtual void process( const sampleFrame * _in, sampleFrame * _out );
+	virtual void process( const SampleFrame* _in, SampleFrame* _out );
 
 
 	virtual void processMidiEvent( const MidiEvent& event, const f_cnt_t offset );
@@ -257,9 +246,15 @@ public:
 	// determine name of current program
 	const char * programName();
 
-	void getParameterDisplays();
+	void loadAllParameterDisplays();
 
-	void getParameterLabels();
+	void loadAllParameterLabels();
+
+	//! Updates a parameter display that has already been loaded
+	void updateParameterDisplay(int index);
+
+	//! Updates a parameter label that has already been loaded
+	void updateParameterLabel(int index);
 
 	// send name of current program back to host
 	void sendCurrentProgramName();
@@ -274,7 +269,7 @@ public:
 	void saveChunkToFile( const std::string & _file );
 
 	// restore settings chunk of plugin from file
-	void loadChunkFromFile( const std::string & _file, int _len );
+	void loadChunkFromFile(const std::string& _file, std::size_t _len);
 
 	// restore settings chunk of plugin from file
 	void loadPresetFile( const std::string & _file );
@@ -395,7 +390,7 @@ public:
 #endif
 
 private:
-	enum GuiThreadMessages
+	enum class GuiThreadMessage
 	{
 		None,
 		ProcessPluginMessage,
@@ -480,33 +475,29 @@ private:
 	std::mutex m_shmLock;
 	bool m_shmValid;
 
-	typedef std::vector<VstMidiEvent> VstMidiEventList;
+	using VstMidiEventList = std::vector<VstMidiEvent>;
 	VstMidiEventList m_midiEvents;
 
 	bpm_t m_bpm;
 	double m_currentSamplePos;
 	int m_currentProgram;
 
-	// host to plugin synchronisation data structure
-	struct in
+	//! Host to plugin synchronisation data structure
+	struct Sync
 	{
-		double lastppqPos;
-		double m_Timestamp;
-		int32_t m_lastFlags;
-	} ;
+		double lastppqPos = 0;
+		double timestamp = -1;
+		std::int32_t lastFlags = 0;
+	};
 
-	in * m_in;
-
-	int m_shmID;
-	VstSyncData* m_vstSyncData;
-
-} ;
+	Sync m_sync;
+};
 
 
 
 
 #ifdef SYNC_WITH_SHM_FIFO
-RemoteVstPlugin::RemoteVstPlugin( key_t _shm_in, key_t _shm_out ) :
+RemoteVstPlugin::RemoteVstPlugin( const std::string& _shm_in, const std::string& _shm_out ) :
 	RemotePluginClient( _shm_in, _shm_out ),
 #else
 RemoteVstPlugin::RemoteVstPlugin( const char * socketPath ) :
@@ -528,57 +519,9 @@ RemoteVstPlugin::RemoteVstPlugin( const char * socketPath ) :
 	m_midiEvents(),
 	m_bpm( 0 ),
 	m_currentSamplePos( 0 ),
-	m_currentProgram( -1 ),
-	m_in( nullptr ),
-	m_shmID( -1 ),
-	m_vstSyncData( nullptr )
+	m_currentProgram(-1)
 {
 	__plugin = this;
-
-#ifndef USE_QT_SHMEM
-	key_t key;
-	if( ( key = ftok( VST_SNC_SHM_KEY_FILE, 'R' ) ) == -1 )
-	{
-		perror( "RemoteVstPlugin.cpp::ftok" );
-	}
-	else
-	{	// connect to shared memory segment
-		if( ( m_shmID = shmget( key, 0, 0 ) ) == -1 )
-		{
-			perror( "RemoteVstPlugin.cpp::shmget" );
-		}
-		else
-		{	// attach segment
-			m_vstSyncData = (VstSyncData *)shmat(m_shmID, 0, 0);
-			if( m_vstSyncData == (VstSyncData *)( -1 ) )
-			{
-				perror( "RemoteVstPlugin.cpp::shmat" );
-			}
-		}
-	}
-#else
-	m_vstSyncData = RemotePluginClient::getQtVSTshm();
-#endif
-	if( m_vstSyncData == nullptr )
-	{
-		fprintf(stderr, "RemoteVstPlugin.cpp: "
-			"Failed to initialize shared memory for VST synchronization.\n"
-			" (VST-host synchronization will be disabled)\n");
-		m_vstSyncData = (VstSyncData*) malloc( sizeof( VstSyncData ) );
-		m_vstSyncData->isPlaying = true;
-		m_vstSyncData->timeSigNumer = 4;
-		m_vstSyncData->timeSigDenom = 4;
-		m_vstSyncData->ppqPos = 0;
-		m_vstSyncData->isCycle = false;
-		m_vstSyncData->hasSHM = false;
-		m_vstSyncData->m_playbackJumped = false;
-		m_vstSyncData->m_sampleRate = sampleRate();
-	}
-
-	m_in = ( in* ) new char[ sizeof( in ) ];
-	m_in->lastppqPos = 0;
-	m_in->m_Timestamp = -1;
-	m_in->m_lastFlags = 0;
 
 	// process until we have loaded the plugin
 	while( 1 )
@@ -600,21 +543,6 @@ RemoteVstPlugin::~RemoteVstPlugin()
 	destroyEditor();
 	setResumed( false );
 	pluginDispatch( effClose );
-#ifndef USE_QT_SHMEM
-	// detach shared memory segment
-	if( shmdt( m_vstSyncData ) == -1)
-	{
-		if( __plugin->m_vstSyncData->hasSHM )
-		{
-			perror( "~RemoteVstPlugin::shmdt" );
-		}
-		if( m_vstSyncData != nullptr )
-		{
-			delete m_vstSyncData;
-			m_vstSyncData = nullptr;
-		}
-	}
-#endif
 
 	if( m_libInst != nullptr )
 	{
@@ -694,7 +622,7 @@ bool RemoteVstPlugin::processMessage( const message & _m )
 			break;
 
 		case IdVstSetLanguage:
-			hlang = static_cast<VstHostLanguages>( _m.getInt() );
+			hlang = static_cast<VstHostLanguage>( _m.getInt() );
 			break;
 
 		case IdVstGetParameterDump:
@@ -748,14 +676,21 @@ bool RemoteVstPlugin::processMessage( const message & _m )
 			//sendMessage( IdVstSetParameter );
 			break;
 
-		case IdVstParameterDisplays:
-			getParameterDisplays();
+		case IdVstLoadAllParameterDisplays:
+			loadAllParameterDisplays();
 			break;
 
-		case IdVstParameterLabels:
-			getParameterLabels();
+		case IdVstLoadAllParameterLabels:
+			loadAllParameterLabels();
 			break;
 
+		case IdVstUpdateParameterDisplay:
+			updateParameterDisplay(_m.getInt());
+			break;
+
+		case IdVstUpdateParameterLabel:
+			updateParameterLabel(_m.getInt());
+			break;
 
 		case IdVstIdleUpdate:
 		{
@@ -891,17 +826,25 @@ void RemoteVstPlugin::initEditor()
 
 	pluginDispatch( effEditOpen, 0, 0, m_window );
 
-	ERect * er;
-	pluginDispatch( effEditGetRect, 0, 0, &er );
+	ERect* er = nullptr;
+	pluginDispatch(effEditGetRect, 0, 0, &er);
 
-	m_windowWidth = er->right - er->left;
-	m_windowHeight = er->bottom - er->top;
+	if (er)
+	{
+		assert(er->right > er->left);
+		m_windowWidth = er->right - er->left;
+		assert(er->bottom > er->top);
+		m_windowHeight = er->bottom - er->top;
 
-	RECT windowSize = { 0, 0, m_windowWidth, m_windowHeight };
-	AdjustWindowRect( &windowSize, dwStyle, false );
-	SetWindowPos( m_window, 0, 0, 0, windowSize.right - windowSize.left,
-			windowSize.bottom - windowSize.top, SWP_NOACTIVATE |
-						SWP_NOMOVE | SWP_NOZORDER );
+		RECT windowSize = { 0, 0, m_windowWidth, m_windowHeight };
+		AdjustWindowRect(&windowSize, dwStyle, false);
+		SetWindowPos(m_window, 0, 0, 0,
+			windowSize.right - windowSize.left,
+			windowSize.bottom - windowSize.top,
+			SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER
+		);
+	}
+
 	pluginDispatch( effEditTop );
 
 #ifdef LMMS_BUILD_LINUX
@@ -912,44 +855,49 @@ void RemoteVstPlugin::initEditor()
 #endif
 
 #else
-	XEvent e;
 	Atom prop_atom, val_atom;
-	
+
 	if (m_display == nullptr)
 	{
 		m_display = XOpenDisplay(nullptr);
 	}
 	m_window = XCreateSimpleWindow(m_display, DefaultRootWindow(m_display), 0, 0, 400, 400, 0, 0, 0);
-	
+
 	m_wmDeleteMessage = XInternAtom(m_display, "WM_DELETE_WINDOW", false);
 	XSetWMProtocols(m_display, m_window, &m_wmDeleteMessage, 1);
-	
+
 	// make tool window
 	prop_atom = XInternAtom(m_display, "_NET_WM_WINDOW_TYPE", False);
 	val_atom = XInternAtom(m_display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
 	XChangeProperty(m_display, m_window, prop_atom, XA_ATOM, 32, PropModeReplace, (unsigned char *)&val_atom, 1);
-	
+
 	// change name
 	XStoreName(m_display, m_window, pluginName());
-	
-	ERect * er;
+
+	ERect* er = nullptr;
 	pluginDispatch(effEditGetRect, 0, 0, &er);
 
-	m_windowWidth = er->right - er->left;
-	m_windowHeight = er->bottom - er->top;
-	XResizeWindow(m_display, m_window, m_windowWidth, m_windowHeight);
-	
+	if (er)
+	{
+		assert(er->right > er->left);
+		m_windowWidth = er->right - er->left;
+		assert(er->bottom > er->top);
+		m_windowHeight = er->bottom - er->top;
+		XResizeWindow(m_display, m_window,
+			static_cast<unsigned int>(m_windowWidth), static_cast<unsigned int>(m_windowHeight));
+	}
+
 	XMapWindow(m_display, m_window);
 	XFlush(m_display);
-	
+
 	pluginDispatch(effEditOpen, 0, (intptr_t) m_display, (void*) m_window);
-	
+
 	XSelectInput(m_display, m_window, SubstructureNotifyMask | ButtonPressMask | ButtonReleaseMask
 			| ButtonMotionMask | ExposureMask | KeyPressMask);
 	
 	pluginDispatch(effEditTop);
 	m_x11WindowVisible = true;
-#endif
+#endif // NATIVE_LINUX_VST
 }
 
 
@@ -1021,7 +969,7 @@ void RemoteVstPlugin::destroyEditor()
 bool RemoteVstPlugin::load( const std::string & _plugin_file )
 {
 #ifndef NATIVE_LINUX_VST
-	if( ( m_libInst = LoadLibraryW( toWString(_plugin_file).c_str() ) ) == nullptr )
+	if ((m_libInst = LoadLibraryW(toWString(_plugin_file).get())) == nullptr)
 	{
 		DWORD error = GetLastError();
 		debugMessage( "LoadLibrary failed: " + GetErrorAsString(error) );
@@ -1035,8 +983,7 @@ bool RemoteVstPlugin::load( const std::string & _plugin_file )
 	}
 #endif
 
-	typedef AEffect * ( VST_CALL_CONV * mainEntryPointer )
-						( audioMasterCallback );
+	using mainEntryPointer = AEffect* (VST_CALL_CONV*) (audioMasterCallback);
 #ifndef NATIVE_LINUX_VST
 	mainEntryPointer mainEntry = (mainEntryPointer)
 				GetProcAddress( m_libInst, "VSTPluginMain" );
@@ -1077,13 +1024,14 @@ bool RemoteVstPlugin::load( const std::string & _plugin_file )
 		return false;
 	}
 
+	const char id[5] = {
+		static_cast<char>(m_plugin->uniqueID >> 24),
+		static_cast<char>(m_plugin->uniqueID >> 16),
+		static_cast<char>(m_plugin->uniqueID >>  8),
+		static_cast<char>(m_plugin->uniqueID      ),
+		0
+	};
 
-	char id[5];
-	sprintf( id, "%c%c%c%c", ((char *)&m_plugin->uniqueID)[3],
-					 ((char *)&m_plugin->uniqueID)[2],
-					 ((char *)&m_plugin->uniqueID)[1],
-					 ((char *)&m_plugin->uniqueID)[0] );
-	id[4] = 0;
 	sendMessage( message( IdVstPluginUniqueID ).addString( id ) );
 
 	pluginDispatch( effOpen );
@@ -1094,7 +1042,7 @@ bool RemoteVstPlugin::load( const std::string & _plugin_file )
 
 
 
-void RemoteVstPlugin::process( const sampleFrame * _in, sampleFrame * _out )
+void RemoteVstPlugin::process( const SampleFrame* _in, SampleFrame* _out )
 {
 	// first we gonna post all MIDI-events we enqueued so far
 	if( m_midiEvents.size() )
@@ -1109,13 +1057,14 @@ void RemoteVstPlugin::process( const sampleFrame * _in, sampleFrame * _out )
 
 		// first sort events chronologically, since some plugins
 		// (e.g. Sinnah) can hang if they're out of order
+		// TODO: Sort on the server side instead
 		std::stable_sort( m_midiEvents.begin(), m_midiEvents.end(),
 				[]( const VstMidiEvent &a, const VstMidiEvent &b )
 				{
 					return a.deltaFrames < b.deltaFrames;
 				} );
 
-		VstEvents* events = (VstEvents *) eventsBuffer;
+		auto events = (VstEvents*)eventsBuffer;
 		events->reserved = 0;
 		events->numEvents = m_midiEvents.size();
 
@@ -1157,16 +1106,16 @@ void RemoteVstPlugin::process( const sampleFrame * _in, sampleFrame * _out )
 #ifdef OLD_VST_SDK
 	if( m_plugin->flags & effFlagsCanReplacing )
 	{
-#endif
 		m_plugin->processReplacing( m_plugin, m_inputs, m_outputs,
 								bufferSize() );
-#ifdef OLD_VST_SDK
 	}
 	else
 	{
 		m_plugin->process( m_plugin, m_inputs, m_outputs,
 								bufferSize() );
 	}
+#else
+	m_plugin->processReplacing(m_plugin, m_inputs, m_outputs, bufferSize());
 #endif
 
 	unlockShm();
@@ -1207,6 +1156,7 @@ void RemoteVstPlugin::processMidiEvent( const MidiEvent& event, const f_cnt_t of
 	}
 	vme.midiData[3] = 0;
 
+	// TODO: Would this cause a data race with the process method? The two methods must not be called concurrently
 	m_midiEvents.push_back( vme );
 }
 
@@ -1265,7 +1215,7 @@ const char * RemoteVstPlugin::programName()
 
 
 // join the ParameterDisplays (stringified values without units) and send them to host
-void RemoteVstPlugin::getParameterDisplays()
+void RemoteVstPlugin::loadAllParameterDisplays()
 {
 	std::string paramDisplays;
 	static char buf[9]; // buffer for getting string
@@ -1280,13 +1230,13 @@ void RemoteVstPlugin::getParameterDisplays()
 		paramDisplays += buf;
 	}
 
-	sendMessage( message( IdVstParameterDisplays ).addString( paramDisplays.c_str() ) );
+	sendMessage(message(IdVstLoadAllParameterDisplays).addString(std::move(paramDisplays)));
 }
 
 
 
 // join the ParameterLabels (units) and send them to host
-void RemoteVstPlugin::getParameterLabels()
+void RemoteVstPlugin::loadAllParameterLabels()
 {
 	std::string paramLabels;
 	static char buf[9]; // buffer for getting string
@@ -1301,7 +1251,35 @@ void RemoteVstPlugin::getParameterLabels()
 		paramLabels += buf;
 	}
 
-	sendMessage( message( IdVstParameterLabels ).addString( paramLabels.c_str() ) );
+	sendMessage(message(IdVstLoadAllParameterLabels).addString(std::move(paramLabels)));
+}
+
+
+
+
+void RemoteVstPlugin::updateParameterDisplay(int index)
+{
+	assert(index < m_plugin->numParams);
+
+	static char display[9] = {};
+	pluginDispatch(effGetParamDisplay, index, 0, display);
+	display[8] = '\0';
+
+	sendMessage(message(IdVstUpdateParameterDisplay).addInt(index).addString(display));
+}
+
+
+
+
+void RemoteVstPlugin::updateParameterLabel(int index)
+{
+	assert(index < m_plugin->numParams);
+
+	static char label[9] = {};
+	pluginDispatch(effGetParamLabel, index, 0, label);
+	label[8] = '\0';
+
+	sendMessage(message(IdVstUpdateParameterLabel).addInt(index).addString(label));
 }
 
 
@@ -1309,10 +1287,14 @@ void RemoteVstPlugin::getParameterLabels()
 
 void RemoteVstPlugin::sendCurrentProgramName()
 {
-	char presName[64];
-	sprintf( presName, "%d/%d: %s", pluginDispatch( effGetProgram ) + 1, m_plugin->numPrograms, programName() );
-
-	sendMessage( message( IdVstCurrentProgramName ).addString( presName ) );
+	char presName[64] = {};
+	std::snprintf(presName, sizeof(presName),
+		"%d/%d: %s",
+		pluginDispatch(effGetProgram) + 1,
+		m_plugin->numPrograms,
+		programName()
+	);
+	sendMessage(message(IdVstCurrentProgramName).addString(presName));
 }
 
 
@@ -1364,17 +1346,17 @@ void RemoteVstPlugin::saveChunkToFile( const std::string & _file )
 	if( m_plugin->flags & 32 )
 	{
 		void * chunk = nullptr;
-		const int len = pluginDispatch( 23, 0, 0, &chunk );
+		const int len = pluginDispatch(effGetChunk, 0, 0, &chunk);
 		if( len > 0 )
 		{
-			FILE* fp = F_OPEN_UTF8( _file, "wb" );
+			FILE* fp = fopenUtf8(_file, "wb");
 			if (!fp)
 			{
 				fprintf( stderr,
 					"Error opening file for saving chunk.\n" );
 				return;
 			}
-			if ( fwrite( chunk, 1, len, fp ) != len )
+			if (fwrite(chunk, 1, len, fp) != static_cast<std::size_t>(len))
 			{
 				fprintf( stderr,
 					"Error saving chunk to file.\n" );
@@ -1437,36 +1419,46 @@ void RemoteVstPlugin::rotateProgram( int offset )
 
 void RemoteVstPlugin::getProgramNames()
 {
-	char presName[1024+256*30];
-	char curProgName[30];
-	if (isInitialized() == false) return;
-	bool progNameIndexed = ( pluginDispatch( 29, 0, -1, curProgName ) == 1 );
+	char presName[1024 + 256 * 30] = {};
+	char curProgName[30] = {};
+	if (!isInitialized()) { return; }
+	const bool progNameIndexed = pluginDispatch(effGetProgramNameIndexed, 0, -1, curProgName) == 1;
 
-	if (m_plugin->numPrograms > 1) {
-		if (progNameIndexed) {
-			for (int i = 0; i< (m_plugin->numPrograms >= 256?256:m_plugin->numPrograms); i++)
+	if (m_plugin->numPrograms > 1)
+	{
+		const auto maxPrograms = std::min(m_plugin->numPrograms, 256);
+		if (progNameIndexed)
+		{
+			for (int i = 0; i < maxPrograms; i++)
 			{
-				pluginDispatch( 29, i, -1, curProgName );
-				if (i == 0) 	sprintf( presName, "%s", curProgName );
-				else		sprintf( presName + strlen(presName), "|%s", curProgName );
+				pluginDispatch(effGetProgramNameIndexed, i, -1, curProgName);
+				if (i == 0) { std::snprintf(presName, sizeof(presName), "%s", curProgName); }
+				else
+				{
+					const auto len = std::strlen(presName);
+					std::snprintf(presName + len, sizeof(presName) - len, "|%s", curProgName);
+				}
 			}
 		}
 		else
 		{
-			int currProgram = pluginDispatch( effGetProgram );
-			for (int i = 0; i< (m_plugin->numPrograms >= 256?256:m_plugin->numPrograms); i++)
+			const int currProgram = pluginDispatch(effGetProgram);
+			for (int i = 0; i < maxPrograms; i++)
 			{
-				pluginDispatch( effSetProgram, 0, i );
-				if (i == 0) 	sprintf( presName, "%s", programName() );
-				else		sprintf( presName + strlen(presName), "|%s", programName() );
+				pluginDispatch(effSetProgram, 0, i);
+				if (i == 0) { std::snprintf(presName, sizeof(presName), "%s", programName()); }
+				else
+				{
+					const auto len = std::strlen(presName);
+					std::snprintf(presName + len, sizeof(presName) - len, "|%s", programName());
+				}
 			}
-			pluginDispatch( effSetProgram, 0, currProgram );
+			pluginDispatch(effSetProgram, 0, currProgram);
 		}
-	} else sprintf( presName, "%s", programName() );
+	}
+	else { std::snprintf(presName, sizeof(presName), "%s", programName()); }
 
-	presName[sizeof(presName)-1] = 0;
-
-	sendMessage( message( IdVstProgramNames ).addString( presName ) );
+	sendMessage(message(IdVstProgramNames).addString(presName));
 }
 
 
@@ -1477,7 +1469,7 @@ inline unsigned int endian_swap(unsigned int& x)
     return (x>>24) | ((x<<8) & 0x00FF0000) | ((x>>8) & 0x0000FF00) | (x<<24);
 }
 
-struct sBank
+struct Bank
 {
 	unsigned int chunkMagic;
 	unsigned int byteSize;
@@ -1492,9 +1484,9 @@ struct sBank
 void RemoteVstPlugin::savePreset( const std::string & _file )
 {
 	unsigned int chunk_size = 0;
-	sBank * pBank = ( sBank* ) new char[ sizeof( sBank ) ];
+	auto bank = Bank{};
 	char progName[ 128 ] = { 0 };
-	char* data = nullptr;
+	char* data = nullptr; // TODO: Fix convoluted and potentially leaky memory management
 	const bool chunky = ( m_plugin->flags & ( 1 << 5 ) ) != 0;
 	bool isPreset = _file.substr( _file.find_last_of( "." ) + 1 )  == "fxp";
 	int presNameLen = _file.find_last_of( "/" ) + _file.find_last_of( "\\" ) + 2;
@@ -1502,73 +1494,90 @@ void RemoteVstPlugin::savePreset( const std::string & _file )
 	if (isPreset)
 	{
 		for (size_t i = 0; i < _file.length() - 4 - presNameLen; i++)
+		{
 			progName[i] = i < 23 ? _file[presNameLen + i] : 0;
-		pluginDispatch( 4, 0, 0, progName );
+		}
+		pluginDispatch(effSetProgramName, 0, 0, progName);
 	}
-	if ( chunky )
-		chunk_size = pluginDispatch( 23, isPreset, 0, &data );
-	else {
-		if (isPreset) {
+
+	if (chunky)
+	{
+		chunk_size = pluginDispatch(effGetChunk, isPreset, 0, &data);
+	}
+	else
+	{
+		if (isPreset)
+		{
 			chunk_size = m_plugin->numParams * sizeof( float );
 			data = new char[ chunk_size ];
-			unsigned int* toUIntArray = reinterpret_cast<unsigned int*>( data );
+			auto toUIntArray = reinterpret_cast<unsigned int*>(data);
 			for ( int i = 0; i < m_plugin->numParams; i++ )
 			{
 				float value = m_plugin->getParameter( m_plugin, i );
-				unsigned int * pValue = ( unsigned int * ) &value;
+				auto pValue = reinterpret_cast<unsigned int*>(&value);
 				toUIntArray[ i ] = endian_swap( *pValue );
 			}
-		} else chunk_size = (((m_plugin->numParams * sizeof( float )) + 56)*m_plugin->numPrograms);
+		}
+		else
+		{
+			chunk_size = (((m_plugin->numParams * sizeof(float)) + 56) * m_plugin->numPrograms);
+		}
 	}
 
-	pBank->chunkMagic = 0x4B6E6343;
-	pBank->byteSize = chunk_size + ( chunky ? sizeof( int ) : 0 ) + 48;
-	if (!isPreset) pBank->byteSize += 100;
-	pBank->byteSize = endian_swap( pBank->byteSize );
-	pBank->fxMagic = chunky ? 0x68435046 : 0x6B437846;
-	if (!isPreset && chunky) pBank->fxMagic = 0x68434246;
-	if (!isPreset &&!chunky) pBank->fxMagic = 0x6B427846;
+	bank.chunkMagic = 0x4B6E6343;
+	bank.byteSize = chunk_size + (chunky ? sizeof(int) : 0) + 48;
+	if (!isPreset) { bank.byteSize += 100; }
+	bank.byteSize = endian_swap(bank.byteSize);
+	bank.fxMagic = chunky ? 0x68435046 : 0x6B437846;
+	if (!isPreset &&  chunky) { bank.fxMagic = 0x68434246; }
+	if (!isPreset && !chunky) { bank.fxMagic = 0x6B427846; }
 
-	pBank->version = 0x01000000;
-	unsigned int uIntToFile = (unsigned int) m_plugin->uniqueID;
-	pBank->fxID = endian_swap( uIntToFile );
+	bank.version = 0x01000000;
+	auto uIntToFile = (unsigned int)m_plugin->uniqueID;
+	bank.fxID = endian_swap(uIntToFile);
 	uIntToFile = (unsigned int) pluginVersion();
-	pBank->fxVersion = endian_swap( uIntToFile );
+	bank.fxVersion = endian_swap(uIntToFile);
 	uIntToFile = (unsigned int) chunky ? m_plugin->numPrograms : m_plugin->numParams;
 	if (!isPreset &&!chunky) uIntToFile = (unsigned int) m_plugin->numPrograms;
-	pBank->numPrograms = endian_swap( uIntToFile );
+	bank.numPrograms = endian_swap(uIntToFile);
 
-	FILE * stream = F_OPEN_UTF8( _file, "wb" );
+	FILE* stream = fopenUtf8(_file, "wb");
 	if (!stream)
 	{
 		fprintf( stderr,
 			"Error opening file for saving preset.\n" );
 		return;
 	}
-	fwrite ( pBank, 1, 28, stream );
+	fwrite(&bank, 1, 28, stream);
 	fwrite ( progName, 1, isPreset ? 28 : 128, stream );
 	if ( chunky ) {
 		uIntToFile = endian_swap( chunk_size );
 		fwrite ( &uIntToFile, 1, 4, stream );
 	}
-	if (pBank->fxMagic != 0x6B427846 )
+
+	if (bank.fxMagic != 0x6B427846)
+	{
 		fwrite ( data, 1, chunk_size, stream );
-	else {
+	}
+	else
+	{
 		int numPrograms = m_plugin->numPrograms;
 		int currProgram = pluginDispatch( effGetProgram );
 		chunk_size = (m_plugin->numParams * sizeof( float ));
-		pBank->byteSize = chunk_size + 48;
-		pBank->byteSize = endian_swap( pBank->byteSize );
-		pBank->fxMagic = 0x6B437846;
+		bank.byteSize = chunk_size + 48;
+		bank.byteSize = endian_swap(bank.byteSize);
+		bank.fxMagic = 0x6B437846;
 		uIntToFile = (unsigned int) m_plugin->numParams;
-		pBank->numPrograms = endian_swap( uIntToFile );
+		bank.numPrograms = endian_swap(uIntToFile);
 		data = new char[ chunk_size ];
-		unsigned int* pValue,* toUIntArray = reinterpret_cast<unsigned int*>( data );
+		unsigned int* pValue;
+		unsigned int* toUIntArray = reinterpret_cast<unsigned int*>(data);
 		float value;
-		for (int j = 0; j < numPrograms; j++) {
+		for (int j = 0; j < numPrograms; j++)
+		{
 			pluginDispatch( effSetProgram, 0, j );
-			pluginDispatch( effGetProgramName, 0, 0, pBank->prgName );
-			fwrite ( pBank, 1, 56, stream );
+			pluginDispatch(effGetProgramName, 0, 0, bank.prgName);
+			fwrite(&bank, 1, 56, stream);
 			for ( int i = 0; i < m_plugin->numParams; i++ )
 			{
 				value = m_plugin->getParameter( m_plugin, i );
@@ -1581,10 +1590,10 @@ void RemoteVstPlugin::savePreset( const std::string & _file )
 	}
 	fclose( stream );
 
-	if ( !chunky ) 
+	if (!chunky)
+	{
 		delete[] data;
-	delete[] (sBank*)pBank;
-
+	}
 }
 
 
@@ -1592,95 +1601,120 @@ void RemoteVstPlugin::savePreset( const std::string & _file )
 
 void RemoteVstPlugin::loadPresetFile( const std::string & _file )
 {
-	void * chunk = nullptr;
-	unsigned int * pLen = new unsigned int[ 1 ];
+	std::unique_ptr<char[]> chunk;
+	unsigned int pLen = 0;
 	unsigned int len = 0;
-	sBank * pBank = (sBank*) new char[ sizeof( sBank ) ];
-	FILE * stream = F_OPEN_UTF8( _file, "rb" );
+	auto bank = Bank{};
+	FILE* stream = fopenUtf8(_file, "rb");
 	if (!stream)
 	{
 		fprintf( stderr,
 			"Error opening file for loading preset.\n" );
 		return;
 	}
-	if ( fread ( pBank, 1, 56, stream ) != 56 )
+
+	if (fread(&bank, 1, 56, stream) != 56)
 	{
 		fprintf( stderr, "Error loading preset file.\n" );
 	}
-        pBank->fxID = endian_swap( pBank->fxID );
-	pBank->numPrograms = endian_swap( pBank->numPrograms );
+	bank.fxID = endian_swap(bank.fxID);
+	bank.numPrograms = endian_swap(bank.numPrograms);
 	unsigned int toUInt;
 	float * pFloat;
 
-	if (m_plugin->uniqueID != pBank->fxID) {
+	if (static_cast<std::uint_fast32_t>(m_plugin->uniqueID) != bank.fxID)
+	{
 		sendMessage( message( IdVstCurrentProgramName ).
 					addString( "Error: Plugin UniqID not match" ) );
 		fclose( stream );
-		delete[] (unsigned int*)pLen;
-		delete[] (sBank*)pBank;
 		return;
 	}
 
-	if( _file.substr( _file.find_last_of( "." ) + 1 ) != "fxp" )
-		fseek ( stream , 156 , SEEK_SET );
+	if (_file.substr(_file.find_last_of('.') + 1) != "fxp")
+	{
+		fseek(stream, 156, SEEK_SET);
+	}
 
-	if(pBank->fxMagic != 0x6B427846) {
-		if(pBank->fxMagic != 0x6B437846) {
-			if ( fread (pLen, 1, 4, stream) != 4 )
+	if (bank.fxMagic != 0x6B427846)
+	{
+		if (bank.fxMagic != 0x6B437846)
+		{
+			if ( fread (&pLen, 1, 4, stream) != 4 )
 			{
 				fprintf( stderr,
 					"Error loading preset file.\n" );
 			}
-			chunk = new char[len = endian_swap(*pLen)];
-		} else chunk = new char[len = sizeof(float)*pBank->numPrograms];
-		if ( fread (chunk, len, 1, stream) != 1 )
+			len = endian_swap(pLen);
+		}
+		else
+		{
+			len = static_cast<unsigned int>(sizeof(float) * bank.numPrograms);
+		}
+
+		chunk = std::make_unique_for_overwrite<char[]>(len);
+		if (fread(chunk.get(), len, 1, stream) != 1)
 		{
 			fprintf( stderr, "Error loading preset file.\n" );
 		}
 		fclose( stream );
 	}
 
-	if(_file.substr(_file.find_last_of(".") + 1) == "fxp") {
-		pBank->prgName[23] = 0;
-		pluginDispatch( 4, 0, 0, pBank->prgName );
-		if(pBank->fxMagic != 0x6B437846)
-			pluginDispatch( 24, 1, len, chunk );
+	if (_file.substr(_file.find_last_of(".") + 1) == "fxp")
+	{
+		// TODO: Could this crash if chunk is null?
+		bank.prgName[23] = '\0';
+		pluginDispatch(effSetProgramName, 0, 0, bank.prgName);
+		if (bank.fxMagic != 0x6B437846)
+		{
+			pluginDispatch(effSetChunk, 1, len, chunk.get());
+		}
 		else
 		{
-			unsigned int* toUIntArray = reinterpret_cast<unsigned int*>( chunk );
-			for (int i = 0; i < pBank->numPrograms; i++ )
+			auto toUIntArray = reinterpret_cast<unsigned int*>(chunk.get());
+			for (auto i = 0u; i < bank.numPrograms; i++)
 			{
 				toUInt = endian_swap( toUIntArray[ i ] );
-				pFloat = ( float* ) &toUInt;
+				pFloat = reinterpret_cast<float*>(&toUInt);
 				m_plugin->setParameter( m_plugin, i, *pFloat );
 			}
 		}
-	} else {
-		if(pBank->fxMagic != 0x6B427846) {
-			pluginDispatch( 24, 0, len, chunk );
-		} else {
-			int numPrograms = pBank->numPrograms;
+	}
+	else
+	{
+		if (bank.fxMagic != 0x6B427846)
+		{
+			// TODO: Could this crash if chunk is null?
+			pluginDispatch(effSetChunk, 0, len, chunk.get());
+		}
+		else
+		{
+			int numPrograms = static_cast<int>(bank.numPrograms);
 			unsigned int * toUIntArray;
 			int currProgram = pluginDispatch( effGetProgram );
-			chunk = new char[ len = sizeof(float)*m_plugin->numParams ];
-			toUIntArray = reinterpret_cast<unsigned int *>( chunk );
-			for (int i =0; i < numPrograms; i++) {
-				if ( fread (pBank, 1, 56, stream) != 56 )
+
+			len = static_cast<unsigned int>(sizeof(float) * m_plugin->numParams);
+			chunk = std::make_unique_for_overwrite<char[]>(len);
+			toUIntArray = reinterpret_cast<unsigned int*>(chunk.get());
+
+			for (int i = 0; i < numPrograms; i++)
+			{
+				if (fread(&bank, 1, 56, stream) != 56)
 				{
 					fprintf( stderr,
 					"Error loading preset file.\n" );
 				}
-				if ( fread (chunk, len, 1, stream) != 1 )
+				if (fread(chunk.get(), len, 1, stream) != 1)
 				{
 					fprintf( stderr,
 					"Error loading preset file.\n" );
 				}
 				pluginDispatch( effSetProgram, 0, i );
-				pBank->prgName[23] = 0;
-				pluginDispatch( 4, 0, 0, pBank->prgName );
-				for (int j = 0; j < m_plugin->numParams; j++ ) {
+				bank.prgName[23] = '\0';
+				pluginDispatch(effSetProgramName, 0, 0, bank.prgName);
+				for (int j = 0; j < m_plugin->numParams; j++)
+				{
 					toUInt = endian_swap( toUIntArray[ j ] );
-					pFloat = ( float* ) &toUInt;
+					pFloat = reinterpret_cast<float*>(&toUInt);
 					m_plugin->setParameter( m_plugin, j, *pFloat );
 				}
 			}
@@ -1690,35 +1724,26 @@ void RemoteVstPlugin::loadPresetFile( const std::string & _file )
 	}
 
 	sendCurrentProgramName();
-
-	delete[] (unsigned int*)pLen;
-	delete[] (sBank*)pBank;
-	delete[] (char*)chunk;
 }
 
-
-
-
-void RemoteVstPlugin::loadChunkFromFile( const std::string & _file, int _len )
+void RemoteVstPlugin::loadChunkFromFile(const std::string& _file, std::size_t _len)
 {
-	char * chunk = new char[_len];
-
-	FILE* fp = F_OPEN_UTF8( _file, "rb" );
+	FILE* fp = fopenUtf8(_file, "rb");
 	if (!fp)
 	{
 		fprintf( stderr,
 			"Error opening file for loading chunk.\n" );
 		return;
 	}
-	if ( fread( chunk, 1, _len, fp ) != _len )
+
+	auto chunk = std::make_unique_for_overwrite<char[]>(_len);
+	if (fread(chunk.get(), 1, _len, fp) != _len)
 	{
 		fprintf( stderr, "Error loading chunk from file.\n" );
 	}
 	close_check( fp );
 
-	pluginDispatch( effSetChunk, 0, _len, chunk );
-
-	delete[] chunk;
+	pluginDispatch(effSetChunk, 0, _len, chunk.get());
 }
 
 
@@ -1757,19 +1782,12 @@ int RemoteVstPlugin::updateInOutCount()
 
 	setInputOutputCount( inputCount(), outputCount() );
 
-	char buf[64];
-	sprintf( buf, "inputs: %d  output: %d\n", inputCount(), outputCount() );
-	debugMessage( buf );
+	char buf[64] = {};
+	std::snprintf(buf, sizeof(buf), "inputs: %d; outputs: %d\n", inputCount(), outputCount());
+	debugMessage(buf);
 
-	if( inputCount() > 0 )
-	{
-		m_inputs = new float * [inputCount()];
-	}
-
-	if( outputCount() > 0 )
-	{
-		m_outputs = new float * [outputCount()];
-	}
+	if (inputCount() > 0) { m_inputs = new float*[inputCount()]; }
+	if (outputCount() > 0) { m_outputs = new float*[outputCount()]; }
 
 	return 1;
 }
@@ -1797,9 +1815,9 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 {
 	static VstTimeInfo _timeInfo;
 #ifdef DEBUG_CALLBACKS
-	char buf[64];
-	sprintf( buf, "host-callback, opcode = %d\n", (int) _opcode );
-	SHOW_CALLBACK( buf );
+	char buf[64] = {};
+	std::snprintf(buf, sizeof(buf), "host-callback, opcode = %d\n", static_cast<int>(_opcode));
+	SHOW_CALLBACK(buf);
 #endif
 
 	// workaround for early callbacks by some plugins
@@ -1808,6 +1826,7 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 		__plugin->m_plugin = _effect;
 	}
 
+	const auto p = static_cast<char*>(_ptr);
 	switch( _opcode )
 	{
 		case audioMasterAutomate:
@@ -1830,7 +1849,7 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			// call application idle routine (this will
 			// call effEditIdle for all open editors too)
 #ifndef NATIVE_LINUX_VST
-			PostMessage( __MessageHwnd, WM_USER, GiveIdle, 0 );
+			PostMessage( __MessageHwnd, WM_USER, static_cast<WPARAM>(GuiThreadMessage::GiveIdle), 0 );
 #else
 			__plugin->sendX11Idle();
 #endif
@@ -1846,86 +1865,71 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			return 0;
 
 		case audioMasterGetTime:
+		{
 			SHOW_CALLBACK( "amc: audioMasterGetTime\n" );
 			// returns const VstTimeInfo* (or 0 if not supported)
 			// <value> should contain a mask indicating which
 			// fields are required (see valid masks above), as some
 			// items may require extensive conversions
 
-			// Shared memory was initialised? - see song.cpp
-			//assert( __plugin->m_vstSyncData != nullptr );
+			const auto syncData = __plugin->getVstSyncData();
+			assert(syncData != nullptr);
 
 			memset( &_timeInfo, 0, sizeof( _timeInfo ) );
 			_timeInfo.samplePos = __plugin->m_currentSamplePos;
-			_timeInfo.sampleRate = __plugin->m_vstSyncData->hasSHM ?
-							__plugin->m_vstSyncData->m_sampleRate :
-							__plugin->sampleRate();
+			_timeInfo.sampleRate = syncData->sampleRate;
 			_timeInfo.flags = 0;
-			_timeInfo.tempo = __plugin->m_vstSyncData->hasSHM ?
-							__plugin->m_vstSyncData->m_bpm :
-							__plugin->m_bpm;
-			_timeInfo.timeSigNumerator = __plugin->m_vstSyncData->timeSigNumer;
-			_timeInfo.timeSigDenominator = __plugin->m_vstSyncData->timeSigDenom;
+			_timeInfo.tempo = syncData->bpm;
+			_timeInfo.timeSigNumerator = syncData->timeSigNumer;
+			_timeInfo.timeSigDenominator = syncData->timeSigDenom;
 			_timeInfo.flags |= kVstTempoValid;
 			_timeInfo.flags |= kVstTimeSigValid;
 
-			if( __plugin->m_vstSyncData->isCycle )
+			if (syncData->isCycle)
 			{
-				_timeInfo.cycleStartPos = __plugin->m_vstSyncData->cycleStart;
-				_timeInfo.cycleEndPos = __plugin->m_vstSyncData->cycleEnd;
+				_timeInfo.cycleStartPos = syncData->cycleStart;
+				_timeInfo.cycleEndPos = syncData->cycleEnd;
 				_timeInfo.flags |= kVstCyclePosValid;
 				_timeInfo.flags |= kVstTransportCycleActive;
 			}
 
-			if( __plugin->m_vstSyncData->ppqPos != 
-							__plugin->m_in->m_Timestamp )
+			if (syncData->ppqPos != __plugin->m_sync.timestamp)
 			{
-				_timeInfo.ppqPos = __plugin->m_vstSyncData->ppqPos;
-				__plugin->m_in->lastppqPos = __plugin->m_vstSyncData->ppqPos;
-				__plugin->m_in->m_Timestamp = __plugin->m_vstSyncData->ppqPos;
+				_timeInfo.ppqPos = syncData->ppqPos;
+				__plugin->m_sync.lastppqPos = syncData->ppqPos;
+				__plugin->m_sync.timestamp = syncData->ppqPos;
 			}
-			else if( __plugin->m_vstSyncData->isPlaying )
+			else if (syncData->isPlaying)
 			{
-				if( __plugin->m_vstSyncData->hasSHM )
-				{
-					__plugin->m_in->lastppqPos +=
-						__plugin->m_vstSyncData->m_bpm / 60.0
-						* __plugin->m_vstSyncData->m_bufferSize
-						/ __plugin->m_vstSyncData->m_sampleRate;
-				}
-				else
-				{
-					__plugin->m_in->lastppqPos +=
-						__plugin->m_bpm / 60.0
-						* __plugin->bufferSize()
-						/ __plugin->sampleRate();
-				}
-				_timeInfo.ppqPos = __plugin->m_in->lastppqPos;
+				__plugin->m_sync.lastppqPos +=
+					syncData->bpm / 60.0
+					* syncData->bufferSize
+					/ syncData->sampleRate;
+				_timeInfo.ppqPos = __plugin->m_sync.lastppqPos;
 			}
-//			_timeInfo.ppqPos = __plugin->m_vstSyncData->ppqPos;
+//			_timeInfo.ppqPos = syncData->ppqPos;
 			_timeInfo.flags |= kVstPpqPosValid;
 
-			if( __plugin->m_vstSyncData->isPlaying )
+			if (syncData->isPlaying)
 			{
 				_timeInfo.flags |= kVstTransportPlaying;
 			}
-			_timeInfo.barStartPos = ( (int) ( _timeInfo.ppqPos / 
-				( 4 *__plugin->m_vstSyncData->timeSigNumer
-				/ (float) __plugin->m_vstSyncData->timeSigDenom ) ) ) *
-				( 4 * __plugin->m_vstSyncData->timeSigNumer
-				/ (float) __plugin->m_vstSyncData->timeSigDenom );
+			_timeInfo.barStartPos = ((int) (_timeInfo.ppqPos
+				/ (4 * syncData->timeSigNumer / (float) syncData->timeSigDenom)))
+				* (4 * syncData->timeSigNumer / (float) syncData->timeSigDenom);
 
 			_timeInfo.flags |= kVstBarsValid;
 
-			if( ( _timeInfo.flags & ( kVstTransportPlaying | kVstTransportCycleActive ) ) !=
-				( __plugin->m_in->m_lastFlags & ( kVstTransportPlaying | kVstTransportCycleActive ) )
-				|| __plugin->m_vstSyncData->m_playbackJumped )
+			if ((_timeInfo.flags & (kVstTransportPlaying | kVstTransportCycleActive))
+				!= (__plugin->m_sync.lastFlags & (kVstTransportPlaying | kVstTransportCycleActive))
+				|| syncData->playbackJumped)
 			{
 				_timeInfo.flags |= kVstTransportChanged;
 			}
-			__plugin->m_in->m_lastFlags = _timeInfo.flags;
+			__plugin->m_sync.lastFlags = _timeInfo.flags;
 
 			return (intptr_t) &_timeInfo;
+		}
 
 		case audioMasterProcessEvents:
 			SHOW_CALLBACK( "amc: audioMasterProcessEvents\n" );
@@ -2019,7 +2023,7 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			// TODO
 			// close window, platform specific handle in <ptr>
 			return 0;
-#endif
+#endif // OLD_VST_SDK
 
 		case audioMasterSizeWindow:
 		{
@@ -2117,15 +2121,14 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			SHOW_CALLBACK( "amc: audioMasterGetVendorString\n" );
 			// fills <ptr> with a string identifying the vendor
 			// (max 64 char)
-			strcpy( (char *) _ptr, "Tobias Doerffel" );
+			std::strcpy(p, "Tobias Doerffel");
 			return 1;
 
 		case audioMasterGetProductString:
 			SHOW_CALLBACK( "amc: audioMasterGetProductString\n" );
 			// fills <ptr> with a string with product name
 			// (max 64 char)
-			strcpy( (char *) _ptr,
-					"LMMS VST Support Layer (LVSL)" );
+			std::strcpy(p, "LMMS VST Support Layer (LVSL)");
 			return 1;
 
 		case audioMasterGetVendorVersion:
@@ -2139,16 +2142,16 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			return 0;
 
 		case audioMasterCanDo:
-			SHOW_CALLBACK( "amc: audioMasterCanDo\n" );
-			return !strcmp( (char *) _ptr, "sendVstEvents" ) ||
-				!strcmp( (char *) _ptr, "sendVstMidiEvent" ) ||
-				!strcmp( (char *) _ptr, "sendVstTimeInfo" ) ||
-				!strcmp( (char *) _ptr, "sizeWindow" ) ||
-				!strcmp( (char *) _ptr, "supplyIdle" );
+			SHOW_CALLBACK("amc: audioMasterCanDo\n");
+			return !(std::strcmp(p, "sendVstEvents")
+				&& std::strcmp(p, "sendVstMidiEvent")
+				&& std::strcmp(p, "sendVstTimeInfo")
+				&& std::strcmp(p, "sizeWindow")
+				&& std::strcmp(p, "supplyIdle"));
 
 		case audioMasterGetLanguage:
 			SHOW_CALLBACK( "amc: audioMasterGetLanguage\n" );
-			return hlang;
+			return static_cast<std::intptr_t>(hlang);
 
 		case audioMasterGetDirectory:
 			SHOW_CALLBACK( "amc: audioMasterGetDirectory\n" );
@@ -2159,7 +2162,7 @@ intptr_t RemoteVstPlugin::hostCallback( AEffect * _effect, int32_t _opcode,
 			SHOW_CALLBACK( "amc: audioMasterUpdateDisplay\n" );
 			// something has changed, update 'multi-fx' display
 #ifndef NATIVE_LINUX_VST
-			PostMessage( __MessageHwnd, WM_USER, GiveIdle, 0 );
+			PostMessage( __MessageHwnd, WM_USER, static_cast<WPARAM>(GuiThreadMessage::GiveIdle), 0 );
 #else
 			__plugin->sendX11Idle();
 #endif
@@ -2203,7 +2206,10 @@ void RemoteVstPlugin::idle()
 		return;
 	}
 	setProcessing( true );
-	pluginDispatch( effEditIdle );
+	if (!HEADLESS && m_window)
+	{
+		pluginDispatch( effEditIdle );
+	}
 	setShouldGiveIdle( false );
 	setProcessing( false );
 	// We might have received a message whilst idling
@@ -2251,7 +2257,10 @@ void RemoteVstPlugin::processUIThreadMessages()
 #endif
 		if( shouldGiveIdle() )
 		{
-			pluginDispatch( effEditIdle );
+			if (!HEADLESS && m_window)
+			{
+				pluginDispatch( effEditIdle );
+			}
 			setShouldGiveIdle( false );
 		}
 #ifdef NATIVE_LINUX_VST
@@ -2310,8 +2319,8 @@ void * RemoteVstPlugin::processingThread(void * _param)
 #ifndef NATIVE_LINUX_VST
 			PostMessage( __MessageHwnd,
 					WM_USER,
-					ProcessPluginMessage,
-					(LPARAM) new message( m ) );
+					static_cast<WPARAM>(GuiThreadMessage::ProcessPluginMessage),
+					reinterpret_cast<LPARAM>(new message(m)));
 #else
 		_this->queueMessage( m );
 #endif
@@ -2320,7 +2329,7 @@ void * RemoteVstPlugin::processingThread(void * _param)
 
 	// notify GUI thread about shutdown
 #ifndef NATIVE_LINUX_VST
-	PostMessage( __MessageHwnd, WM_USER, ClosePlugin, 0 );
+	PostMessage( __MessageHwnd, WM_USER, static_cast<WPARAM>(GuiThreadMessage::ClosePlugin), 0 );
 
 	return 0;
 #else
@@ -2384,7 +2393,7 @@ void RemoteVstPlugin::guiEventLoop()
 		{
 			XNextEvent(m_display, &e);
 		
-			if (e.type == ClientMessage && e.xclient.data.l[0] == m_wmDeleteMessage)
+			if (e.type == ClientMessage && static_cast<Atom>(e.xclient.data.l[0]) == m_wmDeleteMessage)
 			{
 				hideEditor();
 			}
@@ -2410,7 +2419,7 @@ void RemoteVstPlugin::guiEventLoop()
 		}
 	}
 }
-#endif
+#endif // NATIVE_LINUX_VST
 
 
 #ifndef NATIVE_LINUX_VST
@@ -2425,9 +2434,9 @@ LRESULT CALLBACK RemoteVstPlugin::wndProc( HWND hwnd, UINT uMsg,
 	}
 	else if( uMsg == WM_USER )
 	{
-		switch( wParam )
+		switch( static_cast<GuiThreadMessage>(wParam) )
 		{
-			case ProcessPluginMessage:
+			case GuiThreadMessage::ProcessPluginMessage:
 			{
 				message * m = (message *) lParam;
 				__plugin->queueMessage( *m );
@@ -2439,11 +2448,11 @@ LRESULT CALLBACK RemoteVstPlugin::wndProc( HWND hwnd, UINT uMsg,
 				return 0;
 			}
 
-			case GiveIdle:
+			case GuiThreadMessage::GiveIdle:
 				__plugin->idle();
 				return 0;
 
-			case ClosePlugin:
+			case GuiThreadMessage::ClosePlugin:
 				PostQuitMessage(0);
 				return 0;
 
@@ -2459,11 +2468,17 @@ LRESULT CALLBACK RemoteVstPlugin::wndProc( HWND hwnd, UINT uMsg,
 
 	return DefWindowProc( hwnd, uMsg, wParam, lParam );
 }
-#endif
+
+
+#endif // NATIVE_LINUX_VST
+
+} // namespace lmms
 
 
 int main( int _argc, char * * _argv )
 {
+	using lmms::RemoteVstPlugin;
+
 #ifdef SYNC_WITH_SHM_FIFO
 	if( _argc < 4 )
 #else
@@ -2475,7 +2490,7 @@ int main( int _argc, char * * _argv )
 	}
 
 #ifndef LMMS_BUILD_WIN32
-	const auto pollParentThread = PollParentThread{};
+	const auto pollParentThread = lmms::PollParentThread{};
 #endif
 
 #ifndef NATIVE_LINUX_VST
@@ -2491,7 +2506,7 @@ int main( int _argc, char * * _argv )
 				sched_get_priority_min( SCHED_FIFO ) ) / 2;
 	sched_setscheduler( 0, SCHED_FIFO, &sparam );
 #endif
-#endif
+#endif // LMMS_BUILD_LINUX
 
 #ifdef LMMS_BUILD_WIN32
 	if( !SetPriorityClass( GetCurrentProcess(), HIGH_PRIORITY_CLASS ) )
@@ -2535,32 +2550,32 @@ int main( int _argc, char * * _argv )
 
 		if ( embedMethod == "none" )
 		{
-			cerr << "Starting detached." << endl;
+			std::cerr << "Starting detached." << std::endl;
 			EMBED = EMBED_X11 = EMBED_WIN32 = HEADLESS = false;
 		}
 		else if ( embedMethod == "win32" )
 		{
-			cerr << "Starting using Win32-native embedding." << endl;
+			std::cerr << "Starting using Win32-native embedding." << std::endl;
 			EMBED = EMBED_WIN32 = true; EMBED_X11 = HEADLESS = false;
 		}
 		else if ( embedMethod == "qt" )
 		{
-			cerr << "Starting using Qt-native embedding." << endl;
+			std::cerr << "Starting using Qt-native embedding." << std::endl;
 			EMBED = true; EMBED_X11 = EMBED_WIN32 = HEADLESS = false;
 		}
 		else if ( embedMethod == "xembed" )
 		{
-			cerr << "Starting using X11Embed protocol." << endl;
+			std::cerr << "Starting using X11Embed protocol." << std::endl;
 			EMBED = EMBED_X11 = true; EMBED_WIN32 = HEADLESS = false;
 		}
 		else if ( embedMethod == "headless" )
 		{
-			cerr << "Starting without UI." << endl;
+			std::cerr << "Starting without UI." << std::endl;
 			HEADLESS = true; EMBED = EMBED_X11 = EMBED_WIN32 = false;
 		}
 		else
 		{
-			cerr << "Unknown embed method " << embedMethod << ". Starting detached instead." << endl;
+			std::cerr << "Unknown embed method " << embedMethod << ". Starting detached instead." << std::endl;
 			EMBED = EMBED_X11 = EMBED_WIN32 = HEADLESS = false;
 		}
 	}
@@ -2568,14 +2583,14 @@ int main( int _argc, char * * _argv )
 #ifdef NATIVE_LINUX_VST
 	if (EMBED)
 	{
-		cerr << "Native linux VST works only without embedding." << endl;
+		std::cerr << "Native linux VST works only without embedding." << std::endl;
 	}
 #endif
 	
 	// constructor automatically will process messages until it receives
 	// a IdVstLoadPlugin message and processes it
 #ifdef SYNC_WITH_SHM_FIFO
-	__plugin = new RemoteVstPlugin( atoi( _argv[1] ), atoi( _argv[2] ) );
+	__plugin = new RemoteVstPlugin( _argv[1], _argv[2] );
 #else
 	__plugin = new RemoteVstPlugin( _argv[1] );
 #endif
@@ -2612,4 +2627,3 @@ int main( int _argc, char * * _argv )
 #endif
 	return 0;
 }
-

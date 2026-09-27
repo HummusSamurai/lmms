@@ -25,8 +25,13 @@
 #ifndef EQFILTER_H
 #define EQFILTER_H
 
+#include <numbers>
+
 #include "BasicFilters.h"
 #include "lmms_math.h"
+
+namespace lmms
+{
 
 ///
 /// \brief The EqFilter class.
@@ -114,15 +119,14 @@ public:
 	}
 
 
-	///
-	/// \brief update
-	/// filters using two BiQuads, then crossfades,
-	///  depending on on percentage of period processes
-	/// \param in
-	/// \param ch
-	/// \param frameProgress percentage of frame processed
-	/// \return
-	///
+	//! @brief Update filters using two BiQuads, then crossfade
+	//!
+	//! Update filters using two BiQuads, then crossfade depending on
+	//! percentage of period processes
+	//!
+	//! @param in Input sample
+	//! @param ch Which channel of the biquad to update
+	//! @param frameProgress percentage of frame processed
 	inline float update( float in, ch_cnt_t ch, float frameProgress)
 	{
 		float initailF =  m_biQuadFrameInitial.update( in, ch );
@@ -177,24 +181,22 @@ protected:
 class EqHp12Filter : public EqFilter
 {
 public :
-	virtual void calcCoefficents()
+	void calcCoefficents() override
 	{
 
 		// calc intermediate
-		float w0 = F_2PI * m_freq / m_sampleRate;
-		float c = cosf( w0 );
-		float s = sinf( w0 );
+		float w0 = 2 * std::numbers::pi_v<float> * m_freq / m_sampleRate;
+		float c = std::cos(w0);
+		float s = std::sin(w0);
 		float alpha = s / ( 2 * m_res );
 
-		float a0, a1, a2, b0, b1, b2; // coeffs to calculate
-
 		//calc coefficents
-		b0 = ( 1 + c ) * 0.5;
-		b1 = ( -( 1 + c ) );
-		b2 = ( 1 + c ) * 0.5;
-		a0 = 1 + alpha;
-		a1 = ( -2 * c );
-		a2 = 1 - alpha;
+		float b0 = (1 + c) * 0.5;
+		float b1 = (-(1 + c));
+		float b2 = (1 + c) * 0.5;
+		float a0 = 1 + alpha;
+		float a1 = (-2 * c);
+		float a2 = 1 - alpha;
 
 		//normalise
 		b0 /= a0;
@@ -222,24 +224,22 @@ public :
 class EqLp12Filter : public EqFilter
 {
 public :
-	virtual void calcCoefficents()
+	void calcCoefficents() override
 	{
 
 		// calc intermediate
-		float w0 = F_2PI * m_freq / m_sampleRate;
-		float c = cosf( w0 );
-		float s = sinf( w0 );
+		float w0 = 2 * std::numbers::pi_v<float> * m_freq / m_sampleRate;
+		float c = std::cos(w0);
+		float s = std::sin(w0);
 		float alpha = s / ( 2 * m_res );
 
-		float a0, a1, a2, b0, b1, b2; // coeffs to calculate
-
 		//calc coefficents
-		b0 = ( 1 - c ) * 0.5;
-		b1 = 1 - c;
-		b2 = ( 1 - c ) * 0.5;
-		a0 = 1 + alpha;
-		a1 = -2 * c;
-		a2 = 1 - alpha;
+		float b0 = (1 - c) * 0.5;
+		float b1 = 1 - c;
+		float b2 = (1 - c) * 0.5;
+		float a0 = 1 + alpha;
+		float a1 = -2 * c;
+		float a2 = 1 - alpha;
 
 		//normalise
 		b0 /= a0;
@@ -266,24 +266,23 @@ class EqPeakFilter : public EqFilter
 public:
 
 
-	virtual void calcCoefficents()
+	void calcCoefficents() override
 	{
+		using namespace std::numbers;
 		// calc intermediate
-		float w0 = F_2PI * m_freq / m_sampleRate;
-		float c = cosf( w0 );
-		float s = sinf( w0 );
-		float A =  pow( 10, m_gain * 0.025);
-		float alpha = s * sinh( log( 2 ) / 2 * m_bw * w0 / sinf(w0) );
-
-		float a0, a1, a2, b0, b1, b2; // coeffs to calculate
+		float w0 = 2 * pi_v<float> * m_freq / m_sampleRate;
+		float c = std::cos(w0);
+		float s = std::sin(w0);
+		float A = fastPow10f(m_gain * 0.025);
+		float alpha = s * std::sinh(ln2 / 2 * m_bw * w0 / std::sin(w0));
 
 		//calc coefficents
-		b0 =   1 + alpha*A;
-		b1 =  -2*c;
-		b2 =   1 - alpha*A;
-		a0 =   1 + alpha/A;
-		a1 =  -2*c;
-		a2 =   1 - alpha/A;
+		float b0 = 1 + alpha * A;
+		float b1 = -2 * c;
+		float b2 = 1 - alpha * A;
+		float a0 = 1 + alpha / A;
+		float a1 = -2 * c;
+		float a2 = 1 - alpha / A;
 
 		//normalise
 		b0 /= a0;
@@ -296,7 +295,7 @@ public:
 		setCoeffs( a1, a2, b0, b1, b2 );
 	}
 
-	virtual inline void setParameters( float sampleRate, float freq, float bw, float gain )
+	inline void setParameters( float sampleRate, float freq, float bw, float gain ) override
 	{
 		bool hasChanged = false;
 		if( sampleRate != m_sampleRate )
@@ -330,26 +329,24 @@ public:
 class EqLowShelfFilter : public EqFilter
 {
 public :
-	virtual void calcCoefficents()
+	void calcCoefficents() override
 	{
 
 		// calc intermediate
-		float w0 = F_2PI * m_freq / m_sampleRate;
-		float c = cosf( w0 );
-		float s = sinf( w0 );
-		float A =  pow( 10, m_gain * 0.025);
-		//        float alpha = s / ( 2 * m_res );
-		float beta = sqrt( A ) / m_res;
-
-		float a0, a1, a2, b0, b1, b2; // coeffs to calculate
+		float w0 = 2 * std::numbers::pi_v<float> * m_freq / m_sampleRate;
+		float c = std::cos(w0);
+		float s = std::sin(w0);
+		float A = fastPow10f(m_gain * 0.025);
+		// float alpha = s / (2 * m_res);
+		float beta = std::sqrt(A) / m_res;
 
 		//calc coefficents
-		b0 = A * ( ( A+1 ) - ( A-1 ) * c + beta * s );
-		b1 = 2  * A * ( ( A - 1 ) - ( A + 1 ) * c) ;
-		b2 = A * ( ( A + 1 ) - ( A - 1 ) * c - beta * s);
-		a0 = ( A + 1 ) + ( A - 1 ) * c + beta * s;
-		a1 = -2 * ( ( A - 1 ) + ( A + 1 ) * c );
-		a2 = ( A + 1 ) + ( A - 1) * c - beta * s;
+		float b0 = A * ((A + 1) - (A - 1) * c + beta * s);
+		float b1 = 2 * A * ((A - 1) - (A + 1) * c);
+		float b2 = A * ((A + 1) - (A - 1) * c - beta * s);
+		float a0 = (A + 1) + (A - 1) * c + beta * s;
+		float a1 = -2 * ((A - 1) + (A + 1) * c);
+		float a2 = (A + 1) + (A - 1) * c - beta * s;
 
 		//normalise
 		b0 /= a0;
@@ -369,25 +366,24 @@ public :
 class EqHighShelfFilter : public EqFilter
 {
 public :
-	virtual void calcCoefficents()
+	void calcCoefficents() override
 	{
 
 		// calc intermediate
-		float w0 = F_2PI * m_freq / m_sampleRate;
-		float c = cosf( w0 );
-		float s = sinf( w0 );
-		float A =  pow( 10, m_gain * 0.025 );
-		float beta = sqrt( A ) / m_res;
-
-		float a0, a1, a2, b0, b1, b2; // coeffs to calculate
+		float w0 = 2 * std::numbers::pi_v<float> * m_freq / m_sampleRate;
+		float c = std::cos(w0);
+		float s = std::sin(w0);
+		float A = fastPow10f(m_gain * 0.025);
+		float beta = std::sqrt(A) / m_res;
 
 		//calc coefficents
-		b0 = A *( ( A +1 ) + ( A - 1 ) * c + beta * s);
-		b1 = -2 * A * ( ( A - 1 ) + ( A + 1 ) * c );
-		b2 = A * ( ( A + 1 ) + ( A - 1 ) * c - beta * s);
-		a0 = ( A + 1 ) - ( A - 1 ) * c + beta * s;
-		a1 = 2 * ( ( A - 1 ) - ( A + 1 ) * c );
-		a2 = ( A + 1) - ( A - 1 ) * c - beta * s;
+		float b0 = A * ((A + 1) + (A - 1) * c + beta * s);
+		float b1 = -2 * A * ((A - 1) + (A + 1) * c);
+		float b2 = A * ((A + 1) + (A - 1) * c - beta * s);
+		float a0 = (A + 1) - (A - 1) * c + beta * s;
+		float a1 = 2 * ((A - 1) - (A + 1) * c);
+		float a2 = (A + 1) - (A - 1) * c - beta * s;
+
 		//normalise
 		b0 /= a0;
 		b1 /= a0;
@@ -437,9 +433,9 @@ public:
 
 
 
-	virtual void processBuffer( sampleFrame* buf, const fpp_t frames )
+	virtual void processBuffer( SampleFrame* buf, const f_cnt_t frames )
 	{
-		for ( fpp_t f = 0 ; f < frames ; ++f)
+		for ( f_cnt_t f = 0 ; f < frames ; ++f)
 		{
 			buf[f][0] = update( buf[f][0] , 0);
 			buf[f][1] = update( buf[f][1] , 1);
@@ -454,6 +450,7 @@ protected:
 };
 
 
+} // namespace lmms
 
 
 #endif // EQFILTER_H

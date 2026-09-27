@@ -23,29 +23,37 @@
  *
  */
 
-#ifndef INSTRUMENT_H
-#define INSTRUMENT_H
+#ifndef LMMS_INSTRUMENT_H
+#define LMMS_INSTRUMENT_H
 
 #include <QString>
+
+#include "Flags.h"
 #include "lmms_export.h"
-#include "lmms_basics.h"
-#include "MemoryManager.h"
+#include "LmmsTypes.h"
+#include "MidiPatch.h"
 #include "Plugin.h"
 #include "TimePos.h"
 
+#include <cmath>
+#include <optional>
+#include <string_view>
+
+namespace lmms
+{
 
 // forward-declarations
 class InstrumentTrack;
 class MidiEvent;
 class NotePlayHandle;
 class Track;
+class SampleFrame;
 
 
 class LMMS_EXPORT Instrument : public Plugin
 {
-	MM_OPERATORS
 public:
-	enum Flag
+	enum class Flag
 	{
 		NoFlags = 0x00,
 		IsSingleStreamed = 0x01,	/*! Instrument provides a single audio stream for all notes */
@@ -53,12 +61,13 @@ public:
 		IsNotBendable = 0x04,		/*! Instrument can't react to pitch bend changes */
 	};
 
-	Q_DECLARE_FLAGS(Flags, Flag);
+	using Flags = lmms::Flags<Flag>;
 
 	Instrument(InstrumentTrack * _instrument_track,
 			const Descriptor * _descriptor,
-			const Descriptor::SubPluginFeatures::Key * key = nullptr);
-	virtual ~Instrument() = default;
+			const Descriptor::SubPluginFeatures::Key * key = nullptr,
+			Flags flags = Flag::NoFlags);
+	~Instrument() override = default;
 
 	// --------------------------------------------------------------------
 	// functions that can/should be re-implemented:
@@ -69,11 +78,11 @@ public:
 	// if the plugin doesn't play each note, it can create an instrument-
 	// play-handle and re-implement this method, so that it mixes its
 	// output buffer only once per audio engine period
-	virtual void play( sampleFrame * _working_buffer );
+	virtual void play( SampleFrame* _working_buffer );
 
 	// to be implemented by actual plugin
 	virtual void playNote( NotePlayHandle * /* _note_to_play */,
-					sampleFrame * /* _working_buf */ )
+					SampleFrame* /* _working_buf */ )
 	{
 	}
 
@@ -82,6 +91,19 @@ public:
 	// (call of dtor if it's a class etc.)
 	virtual void deleteNotePluginData( NotePlayHandle * _note_to_play );
 
+	//! For applicable instruments: Provides host with current MIDI bank and program
+	virtual auto midiPatch() const -> std::optional<MidiPatch>
+	{
+		return std::nullopt;
+	}
+
+	//! Called if external source needs to change something but we cannot
+	//! reference the class header. Should return nullptr if the model is not found.
+	virtual auto childModel(std::string_view modelName) -> AutomatableModel*
+	{
+		return nullptr;
+	}
+
 	// Get number of sample-frames that should be used when playing beat
 	// (note with unspecified length)
 	// Per default this function returns 0. In this case, channel is using
@@ -89,18 +111,39 @@ public:
 	virtual f_cnt_t beatLen( NotePlayHandle * _n ) const;
 
 
-	// some instruments need a certain number of release-frames even
-	// if no envelope is active - such instruments can re-implement this
-	// method for returning how many frames they at least like to have for
-	// release
-	virtual f_cnt_t desiredReleaseFrames() const
+	// This method can be overridden by instruments that need a certain
+	// release time even if no envelope is active. It returns the time
+	// in milliseconds that these instruments would like to have for
+	// their release stage.
+	virtual float desiredReleaseTimeMs() const
 	{
-		return 0;
+		return 0.f;
 	}
 
-	virtual Flags flags() const
+	// Converts the desired release time in milliseconds to the corresponding
+	// number of frames depending on the sample rate.
+	f_cnt_t desiredReleaseFrames() const
 	{
-		return NoFlags;
+		const sample_rate_t sampleRate = getSampleRate();
+
+		return static_cast<f_cnt_t>(std::ceil(desiredReleaseTimeMs() * sampleRate / 1000.f));
+	}
+
+	sample_rate_t getSampleRate() const;
+
+	bool isSingleStreamed() const
+	{
+		return m_flags.testFlag(Instrument::Flag::IsSingleStreamed);
+	}
+
+	bool isMidiBased() const
+	{
+		return m_flags.testFlag(Instrument::Flag::IsMidiBased);
+	}
+
+	bool isBendable() const
+	{
+		return !m_flags.testFlag(Instrument::Flag::IsNotBendable);
 	}
 
 	// sub-classes can re-implement this for receiving all incoming
@@ -133,19 +176,25 @@ public:
 
 protected:
 	// fade in to prevent clicks
-	void applyFadeIn(sampleFrame * buf, NotePlayHandle * n);
+	void applyFadeIn(SampleFrame* buf, NotePlayHandle * n);
 
 	// instruments may use this to apply a soft fade out at the end of
 	// notes - method does this only if really less or equal
 	// desiredReleaseFrames() frames are left
-	void applyRelease( sampleFrame * buf, const NotePlayHandle * _n );
+	void applyRelease( SampleFrame* buf, const NotePlayHandle * _n );
+
+	float computeReleaseTimeMsByFrameCount(f_cnt_t frames) const;
 
 
 private:
 	InstrumentTrack * m_instrumentTrack;
+	Flags m_flags;
+};
 
-} ;
 
-Q_DECLARE_OPERATORS_FOR_FLAGS(Instrument::Flags)
+LMMS_DECLARE_OPERATORS_FOR_FLAGS(Instrument::Flag)
 
-#endif
+
+} // namespace lmms
+
+#endif // LMMS_INSTRUMENT_H

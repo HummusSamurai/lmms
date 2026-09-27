@@ -30,14 +30,24 @@
 
 #include <QObject>
 
-
-class CustomTextKnob;
 class QGridLayout;
 class QPaintEvent;
 class QPushButton;
 class QMdiSubWindow;
 class QScrollArea;
+
+namespace lmms
+{
+
+
 class VstEffect;
+
+namespace gui
+{
+class ManageVSTEffectView;
+class VstEffectControlDialog;
+class VstPluginKnob;
+}
 
 
 class VstEffectControls : public EffectControls
@@ -45,29 +55,29 @@ class VstEffectControls : public EffectControls
 	Q_OBJECT
 public:
 	VstEffectControls( VstEffect * _eff );
-	virtual ~VstEffectControls();
+	~VstEffectControls() override;
 
-	virtual void saveSettings( QDomDocument & _doc, QDomElement & _parent );
-	virtual void loadSettings( const QDomElement & _this );
-	inline virtual QString nodeName() const
+	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
+	void loadSettings( const QDomElement & _this ) override;
+	inline QString nodeName() const override
 	{
 		return "vsteffectcontrols";
 	}
 
-	virtual int controlCount();
+	int controlCount() override;
 
-	virtual EffectControlDialog * createView();
+	gui::EffectControlDialog* createView() override;
 
 
 protected slots:
-	void updateMenu( void );
-	void managePlugin( void );
-	void openPreset( void );
-	void savePreset( void );
-	void rollPreset( void );
-	void rolrPreset( void );
-	void selPreset( void );
-	void setParameter( Model * action );
+	void updateMenu();
+	void managePlugin();
+	void openPreset();
+	void savePreset();
+	void rollPreset();
+	void rolrPreset();
+	void selPreset();
+	void setParameter( lmms::Model * action );
 
 protected:
 	virtual void paintEvent( QPaintEvent * _pe );
@@ -79,7 +89,7 @@ private:
 
 	QMdiSubWindow * m_subWindow;
 	QScrollArea * m_scrollArea;
-	FloatModel ** knobFModel;
+	std::vector<FloatModel*> knobFModel;
 	int paramCount;
 
 	QObject * ctrHandle;
@@ -87,13 +97,15 @@ private:
 	int lastPosInMenu;
 //	QLabel * m_presetLabel;
 
-	friend class VstEffectControlDialog;
-	friend class ManageVSTEffectView;
+	friend class gui::VstEffectControlDialog;
+	friend class gui::ManageVSTEffectView;
 
 	bool m_vstGuiVisible;
 } ;
 
 
+namespace gui
+{
 
 
 class ManageVSTEffectView : public QObject
@@ -101,18 +113,16 @@ class ManageVSTEffectView : public QObject
 	Q_OBJECT
 public:
 	ManageVSTEffectView( VstEffect * _eff, VstEffectControls * m_vi );
-	virtual ~ManageVSTEffectView();
+	~ManageVSTEffectView() override;
 
 
 protected slots:
-	void syncPlugin( void );
-	void displayAutomatedOnly( void );
-	void setParameter( Model * action );
-	void syncParameterText();
+	void syncPlugin();
+	void displayAutomatedOnly();
+	void setParameter( lmms::Model * action );
 	void closeWindow();
 
 private:
-
 //	static QPixmap * s_artwork;
 
 	VstEffectControls * m_vi2;
@@ -127,9 +137,12 @@ private:
 	QPushButton * m_syncButton;
 	QPushButton * m_displayAutomatedOnly;
 	QPushButton * m_closeButton;
-	CustomTextKnob ** vstKnobs;
+	std::vector<VstPluginKnob*> m_vstKnobs;
+};
 
-} ;
 
+} // namespace gui
+
+} // namespace lmms
 
 #endif

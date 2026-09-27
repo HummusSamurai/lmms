@@ -23,15 +23,20 @@
  */
 
 
+#include <QGroupBox>
 #include <QLayout>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
-#include <QGroupBox>
+#include <QRegularExpression>
 
 #include "DeprecationHelper.h"
 #include "VersionedSaveDialog.h"
 #include "LedCheckBox.h"
+
+
+namespace lmms::gui
+{
 
 
 VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
@@ -45,20 +50,20 @@ VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
 	setFileMode( QFileDialog::AnyFile );
 
 	// Create + and - buttons
-	QPushButton *plusButton( new QPushButton( "+", this) );
+	auto plusButton(new QPushButton("+", this));
 	plusButton->setToolTip( tr( "Increment version number" ) );
-	QPushButton *minusButton( new QPushButton( "-", this ) );
+	auto minusButton(new QPushButton("-", this));
 	minusButton->setToolTip( tr( "Decrement version number" ) );
-	plusButton->setFixedWidth(horizontalAdvance(plusButton->fontMetrics(), "+") + 30);
-	minusButton->setFixedWidth(horizontalAdvance(minusButton->fontMetrics(), "+") + 30);
+	plusButton->setFixedWidth(plusButton->fontMetrics().horizontalAdvance("+") + 30);
+	minusButton->setFixedWidth(minusButton->fontMetrics().horizontalAdvance("+") + 30);
 
 	// Add buttons to grid layout. For doing this, remove the lineEdit and
 	// replace it with a HBox containing lineEdit and the buttons.
-	QGridLayout *layout = dynamic_cast<QGridLayout*>( this->layout() );
+	auto layout = dynamic_cast<QGridLayout*>(this->layout());
 	QWidget *lineEdit = findChild<QLineEdit*>();
 	layout->removeWidget( lineEdit );
 
-	QHBoxLayout* hLayout( new QHBoxLayout() );
+	auto hLayout(new QHBoxLayout());
 	hLayout->addWidget( lineEdit );
 	hLayout->addWidget( plusButton );
 	hLayout->addWidget( minusButton );
@@ -76,8 +81,8 @@ VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
 	}
 
 	// Connect + and - buttons
-	connect( plusButton, SIGNAL( clicked() ), this, SLOT( incrementVersion() ));
-	connect( minusButton, SIGNAL( clicked() ), this, SLOT( decrementVersion() ));
+	connect( plusButton, SIGNAL(clicked()), this, SLOT(incrementVersion()));
+	connect( minusButton, SIGNAL(clicked()), this, SLOT(decrementVersion()));
 }
 
 
@@ -85,9 +90,9 @@ VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
 
 bool VersionedSaveDialog::changeFileNameVersion(QString &fileName, bool increment )
 {
-	static QRegExp regexp( "[- ]\\d+(\\.\\w+)?$" );
+	static QRegularExpression regex( "[- ]\\d+(\\.\\w+)?$" );
 
-	int idx = regexp.indexIn( fileName );
+	int idx = regex.match(fileName).capturedStart();
 	// For file names without extension (no ".mmpz")
 	int insertIndex = fileName.lastIndexOf( '.' );
 	if ( insertIndex < idx+1 )
@@ -189,3 +194,6 @@ SaveOptionsWidget::SaveOptionsWidget(Song::SaveOptions &saveOptions) {
 
 	setLayout(layout);
 }
+
+
+} // namespace lmms::gui

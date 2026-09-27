@@ -30,6 +30,9 @@
 #include "Effect.h"
 #include "DynamicsProcessorControls.h"
 
+namespace lmms
+{
+
 class RmsHelper;
 
 
@@ -38,11 +41,12 @@ class DynProcEffect : public Effect
 public:
 	DynProcEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key );
-	virtual ~DynProcEffect();
-	virtual bool processAudioBuffer( sampleFrame * _buf,
-							const fpp_t _frames );
+	~DynProcEffect() override;
 
-	virtual EffectControls * controls()
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
+	void processBypassedImpl() override;
+
+	EffectControls * controls() override
 	{
 		return( &m_dpControls );
 	}
@@ -68,7 +72,6 @@ private:
 } ;
 
 
-
-
+} // namespace lmms
 
 #endif

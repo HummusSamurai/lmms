@@ -27,8 +27,12 @@
 #include <QWidget>
 
 #include "fft_helpers.h"
-#include "lmms_basics.h"
+#include "LmmsTypes.h"
 
+namespace lmms
+{
+
+class SampleFrame;
 
 const int MAX_BANDS = 2048;
 class EqAnalyser
@@ -41,7 +45,7 @@ public:
 	bool getInProgress();
 	void clear();
 
-	void analyze( sampleFrame *buf, const fpp_t frames );
+	void analyze( SampleFrame* buf, const f_cnt_t frames );
 
 	float getEnergy() const;
 	int getSampleRate() const;
@@ -63,22 +67,21 @@ private:
 };
 
 
-
+namespace gui
+{
 
 class EqSpectrumView : public QWidget
 {
 	Q_OBJECT
 public:
 	explicit EqSpectrumView( EqAnalyser *b, QWidget *_parent = 0 );
-	virtual ~EqSpectrumView()
-	{
-	}
+	~EqSpectrumView() override = default;
 
 	QColor getColor() const;
 	void setColor( const QColor &value );
 
 protected:
-	virtual void paintEvent( QPaintEvent *event );
+	void paintEvent( QPaintEvent *event ) override;
 
 private slots:
 	void periodicalUpdate();
@@ -96,4 +99,10 @@ private:
 
 	float bandToFreq ( int index );
 };
+
+
+} // namespace gui
+
+} // namespace lmms
+
 #endif // EQSPECTRUMVIEW_H

@@ -22,14 +22,21 @@
  *
  */
 
-#ifndef SAMPLE_TRACK_VIEW_H
-#define SAMPLE_TRACK_VIEW_H
+#ifndef LMMS_GUI_SAMPLE_TRACK_VIEW_H
+#define LMMS_GUI_SAMPLE_TRACK_VIEW_H
 
 
+#include "SampleTrack.h"
 #include "TrackView.h"
 
+namespace lmms
+{
+
+namespace gui
+{
+
 class Knob;
-class SampleTrack;
+class MixerChannelLcdSpinBox;
 class SampleTrackWindow;
 class TrackLabelButton;
 
@@ -39,7 +46,7 @@ class SampleTrackView : public TrackView
 	Q_OBJECT
 public:
 	SampleTrackView( SampleTrack* Track, TrackContainerView* tcv );
-	virtual ~SampleTrackView();
+	~SampleTrackView() override;
 
 	SampleTrackWindow * getSampleTrackWindow()
 	{
@@ -76,12 +83,17 @@ protected:
 	void dropEvent(QDropEvent *de) override;
 
 private slots:
-	void assignMixerLine( int channelIndex );
+	//! @brief Assign a specific mixer Channel for this track.
+	void assignMixerLine(int channelIndex);
+
+	//! @brief Create and assign a new mixer Channel for this track.
 	void createMixerLine();
+	void corruptStateUpdate();
 
 
 private:
 	SampleTrackWindow * m_window;
+	MixerChannelLcdSpinBox* m_mixerChannelNumber;
 	Knob * m_volumeKnob;
 	Knob * m_panningKnob;
 	FadeButton * m_activityIndicator;
@@ -97,5 +109,8 @@ private:
 } ;
 
 
+} // namespace gui
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_GUI_SAMPLE_TRACK_VIEW_H

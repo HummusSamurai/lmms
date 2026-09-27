@@ -23,8 +23,8 @@
  *
  */
 
-#ifndef AUTOMATABLE_MODEL_VIEW_H
-#define AUTOMATABLE_MODEL_VIEW_H
+#ifndef LMMS_GUI_AUTOMATABLE_MODEL_VIEW_H
+#define LMMS_GUI_AUTOMATABLE_MODEL_VIEW_H
 
 #include "ModelView.h"
 #include "AutomatableModel.h"
@@ -32,11 +32,14 @@
 class QMenu;
 class QMouseEvent;
 
+namespace lmms::gui
+{
+
 class LMMS_EXPORT AutomatableModelView : public ModelView
 {
 public:
 	AutomatableModelView( Model* model, QWidget* _this );
-	virtual ~AutomatableModelView() = default;
+	~AutomatableModelView() override = default;
 
 	// some basic functions for convenience
 	AutomatableModel* modelUntyped()
@@ -60,7 +63,7 @@ public:
 
 	inline void setDescription( const QString& desc )
 	{
-		m_description = desc;
+		m_description = desc.trimmed();
 	}
 
 	inline void setUnit( const QString& unit )
@@ -94,9 +97,6 @@ public:
 public slots:
 	void execConnectionDialog();
 	void removeConnection();
-	void editSongGlobalAutomation();
-	void unlinkAllModels();
-	void removeSongGlobalAutomation();
 
 private slots:
 	/// Copy the model's value to the clipboard.
@@ -132,5 +132,6 @@ using FloatModelView = TypedModelView<FloatModel>;
 using IntModelView = TypedModelView<IntModel>;
 using BoolModelView = TypedModelView<BoolModel>;
 
-#endif
+} // namespace lmms::gui
 
+#endif // LMMS_GUI_AUTOMATABLE_MODEL_VIEW_H

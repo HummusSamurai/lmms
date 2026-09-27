@@ -22,29 +22,40 @@
  *
  */
 
-#ifndef TRACK_CONTENT_OBJECT_H
-#define TRACK_CONTENT_OBJECT_H
+#ifndef LMMS_CLIP_H
+#define LMMS_CLIP_H
+
+#include <optional>
 
 #include <QColor>
 
 #include "AutomatableModel.h"
 
 
+namespace lmms
+{
+
 class Track;
+
+namespace gui
+{
+
 class ClipView;
-class TrackContainer;
 class TrackView;
+
+} // namespace gui
 
 
 class LMMS_EXPORT Clip : public Model, public JournallingObject
 {
 	Q_OBJECT
-	MM_OPERATORS
 	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
 	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
-	Clip( Track * track );
-	virtual ~Clip();
+	//! @brief Creates a new clip for the given track @p track.
+	//! @param track The track that will contain the new object
+	Clip(Track* track);
+	~Clip() override; //!< Destroys the given clip.
 
 	inline Track * getTrack() const
 	{
@@ -84,39 +95,42 @@ public:
 		return m_length;
 	}
 
-	inline void setAutoResize( const bool r )
-	{
-		m_autoResize = r;
-	}
 
-	inline const bool getAutoResize() const
+	bool hasTrackContainer() const;
+
+	bool isInPattern() const;
+
+	bool manuallyResizable() const;
+
+	//! @brief Set whether a clip has been resized yet by the user or the knife tool.
+	//!
+	//! If a clip has been resized previously, it will not automatically resize when editing it.
+	void setAutoResize(const bool r) { m_autoResize = r; }
+
+	bool getAutoResize() const
 	{
 		return m_autoResize;
 	}
 
-	QColor color() const
-	{
-		return m_color;
-	}
+	auto color() const -> const std::optional<QColor>& { return m_color; }
+	void setColor(const std::optional<QColor>& color);
 
-	void setColor( const QColor & c )
-	{
-		m_color = c;
-	}
+	//! @brief Move this Clip's position in time
+	//!
+	//! If the clip has moved, update its position. We also add a journal entry for undo and update the display.
+	//!
+	//! @param pos The new position of the clip.
+	virtual void movePosition(const TimePos& pos);
 
-	bool hasColor();
+	//! @brief Change the length of this Clip
+	//!
+	//! If the clip's length has changed, update it. We also add a journal entry for undo and update the display.
+	//!
+	//! @param length The new length of the clip.
+	virtual void changeLength(const TimePos& length);
+	virtual void updateLength() {};
 
-	void useCustomClipColor( bool b );
-
-	bool usesCustomClipColor()
-	{
-		return m_useCustomClipColor;
-	}
-
-	virtual void movePosition( const TimePos & pos );
-	virtual void changeLength( const TimePos & length );
-
-	virtual ClipView * createView( TrackView * tv ) = 0;
+	virtual gui::ClipView * createView( gui::TrackView * tv ) = 0;
 
 	inline void selectViewOnCreate( bool select )
 	{
@@ -128,18 +142,21 @@ public:
 		return m_selectViewOnCreate;
 	}
 
-	/// Returns true if and only if a->startPosition() < b->startPosition()
+	//! @brief Returns true if and only if `a->startPosition()` < `b->startPosition()`
 	static bool comparePosition(const Clip* a, const Clip* b);
 
 	TimePos startTimeOffset() const;
-	void setStartTimeOffset( const TimePos &startTimeOffset );
+	virtual void setStartTimeOffset(const TimePos& startTimeOffset);
 
-	// Will copy the state of a clip to another clip
-	static void copyStateTo( Clip *src, Clip *dst );
+	//! @brief Copies the state of a clip to another clip
+	static void copyStateTo(Clip* src, Clip* dst);
+
+	//! @brief Creates a copy of this clip
+	//! @return Pointer to the new clip object
+	virtual Clip* clone() = 0;
 
 public slots:
-	void toggleMute();
-
+	void toggleMute(); //!< Mutes this Clip
 
 signals:
 	void lengthChanged();
@@ -147,15 +164,13 @@ signals:
 	void destroyedClip();
 	void colorChanged();
 
+protected:
+
+	//! @brief Creates a duplicate clip of the one provided.
+	//! @param other The clip object which will be copied.
+	Clip(const Clip& other);
 
 private:
-	enum Actions
-	{
-		NoAction,
-		Move,
-		Resize
-	} ;
-
 	Track * m_track;
 	QString m_name;
 
@@ -165,16 +180,16 @@ private:
 
 	BoolModel m_mutedModel;
 	BoolModel m_soloModel;
-	bool m_autoResize;
+	bool m_autoResize = true;
 
 	bool m_selectViewOnCreate;
 
-	QColor m_color;
-	bool m_useCustomClipColor;
+	std::optional<QColor> m_color;
 
 	friend class ClipView;
+};
 
-} ;
 
+} // namespace lmms
 
-#endif
+#endif // LMMS_CLIP_H

@@ -31,12 +31,14 @@
 #include <QString>
 #include <QTimer>
 
+#include "Knob.h"
 #include "JournallingObject.h"
 #include "RemotePlugin.h"
 
 #include "vstbase_export.h"
 
-class vstSubWin;
+namespace lmms
+{
 
 
 class VSTBASE_EXPORT VstPlugin : public RemotePlugin, public JournallingObject
@@ -44,7 +46,7 @@ class VSTBASE_EXPORT VstPlugin : public RemotePlugin, public JournallingObject
 	Q_OBJECT
 public:
 	VstPlugin( const QString & _plugin );
-	virtual ~VstPlugin();
+	~VstPlugin() override;
 
 	void tryLoad( const QString &remoteVstPluginExecutable );
 
@@ -90,12 +92,12 @@ public:
 		return m_allProgramNames;
 	}
 
-	inline const QString& allParameterLabels() const
+	const std::vector<QString>& allParameterLabels() const
 	{
 		return m_allParameterLabels;
 	}
 
-	inline const QString& allParameterDisplays() const
+	const std::vector<QString>& allParameterDisplays() const
 	{
 		return m_allParameterDisplays;
 	}
@@ -111,7 +113,7 @@ public:
 	void loadSettings( const QDomElement & _this ) override;
 	void saveSettings( QDomDocument & _doc, QDomElement & _this ) override;
 
-	virtual QString nodeName() const override
+	QString nodeName() const override
 	{
 		return "vstplugin";
 	}
@@ -123,15 +125,17 @@ public:
 	QString embedMethod() const;
 
 public slots:
-	void setTempo( bpm_t _bpm );
+	void setTempo( lmms::bpm_t _bpm );
 	void updateSampleRate();
-	void openPreset( void );
+	void openPreset();
 	void setProgram( int index );
 	void rotateProgram( int offset );
 	void loadProgramNames();
 	void loadParameterLabels();
 	void loadParameterDisplays();
-	void savePreset( void );
+	void updateParameterLabel(int index);
+	void updateParameterDisplay(int index);
+	void savePreset();
 	void setParam( int i, float f );
 	void idleUpdate();
 
@@ -159,8 +163,8 @@ private:
 	QString m_productString;
 	QString m_currentProgramName;
 	QString m_allProgramNames;
-	QString m_allParameterLabels;
-	QString m_allParameterDisplays;
+	std::vector<QString> m_allParameterLabels;
+	std::vector<QString> m_allParameterDisplays;
 
 	QString p_name;
 
@@ -172,5 +176,30 @@ private:
 
 } ;
 
+namespace gui {
+
+class VSTBASE_EXPORT VstPluginKnob : public Knob
+{
+public:
+	VstPluginKnob(VstPlugin* plugin, int paramIndex, const QString& name, QWidget* parent);
+	~VstPluginKnob() override = default;
+
+private:
+	void timerEvent(QTimerEvent* event) override;
+
+	auto currentValueToText() -> QString override;
+	auto currentValueToTextUpdate() -> std::optional<QString> override;
+
+	auto getParameterText() const -> QString;
+
+	VstPlugin* m_plugin = nullptr;
+	int m_paramIndex = 0;
+
+	int m_rateLimitTimerId = 0;
+	bool m_updateNow = false;
+};
+
+} // namespace gui
+} // namespace lmms
 
 #endif

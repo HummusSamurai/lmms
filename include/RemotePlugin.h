@@ -22,19 +22,30 @@
  *
  */
 
-#ifndef REMOTE_PLUGIN_H
-#define REMOTE_PLUGIN_H
+#ifndef LMMS_REMOTE_PLUGIN_H
+#define LMMS_REMOTE_PLUGIN_H
+
+#include <QThread>
+#include <QProcess>
+#include <QRecursiveMutex>
 
 #include "RemotePluginBase.h"
+#include "SharedMemory.h"
+#include "LmmsTypes.h"
 
+namespace lmms
+{
+
+class MidiEvent;
 class RemotePlugin;
+class SampleFrame;
 
 class ProcessWatcher : public QThread
 {
 	Q_OBJECT
 public:
 	ProcessWatcher( RemotePlugin * );
-	virtual ~ProcessWatcher() = default;
+	~ProcessWatcher() override = default;
 
 	void stop()
 	{
@@ -61,7 +72,7 @@ class LMMS_EXPORT RemotePlugin : public QObject, public RemotePluginBase
 	Q_OBJECT
 public:
 	RemotePlugin();
-	virtual ~RemotePlugin();
+	~RemotePlugin() override;
 
 	inline bool isRunning()
 	{
@@ -69,7 +80,7 @@ public:
 		return true;
 #else
 		return m_process.state() != QProcess::NotRunning;
-#endif
+#endif // DEBUG_REMOTE_PLUGIN
 	}
 
 	bool init( const QString &pluginExecutable, bool waitForInitDoneMsg, QStringList extraArgs = {} );
@@ -87,7 +98,7 @@ public:
 
 	bool processMessage( const message & _m ) override;
 
-	bool process( const sampleFrame * _in_buf, sampleFrame * _out_buf );
+	bool process( const SampleFrame* _in_buf, SampleFrame* _out_buf );
 
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
 
@@ -153,15 +164,11 @@ private:
 	QString m_exec;
 	QStringList m_args;
 
-	QMutex m_commMutex;
+	QRecursiveMutex m_commMutex;
 	bool m_splitChannels;
-#ifdef USE_QT_SHMEM
-	QSharedMemory m_shmObj;
-#else
-	int m_shmID;
-#endif
-	size_t m_shmSize;
-	float * m_shm;
+
+	SharedMemory<float[]> m_audioBuffer;
+	std::size_t m_audioBufferSize;
 
 	int m_inputCount;
 	int m_outputCount;
@@ -169,7 +176,7 @@ private:
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_server;
 	QString m_socketFile;
-#endif
+#endif // not SYNC_WITH_SHM_FIFO
 
 	friend class ProcessWatcher;
 
@@ -179,9 +186,11 @@ private slots:
 	void processErrored(QProcess::ProcessError err );
 } ;
 
-LMMS_EXPORT inline std::string QSTR_TO_STDSTR(QString const& qstr)
+inline std::string QSTR_TO_STDSTR(QString const& qstr)
 {
 	return qstr.toStdString();
 }
 
-#endif // REMOTE_PLUGIN_H
+} // namespace lmms
+
+#endif // LMMS_REMOTE_PLUGIN_H

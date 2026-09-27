@@ -27,7 +27,15 @@
 
 #include "EffectControlDialog.h"
 
+namespace lmms
+{
+
+
 class VecControls;
+
+namespace gui
+{
+
 
 //! Top-level widget holding the configuration GUI and vector display
 class VecControlsDialog : public EffectControlDialog
@@ -35,13 +43,17 @@ class VecControlsDialog : public EffectControlDialog
 	Q_OBJECT
 public:
 	explicit VecControlsDialog(VecControls *controls);
-	virtual ~VecControlsDialog() {}
+	~VecControlsDialog() override = default;
 
-	bool isResizable() const override {return true;}
 	QSize sizeHint() const override;
 
 private:
 	VecControls *m_controls;
 };
+
+
+} // namespace gui
+
+} // namespace lmms
 
 #endif // VECCONTROLSDIALOG_H

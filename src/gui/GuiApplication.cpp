@@ -41,15 +41,36 @@
 #include "SongEditor.h"
 
 #include <QApplication>
+#include <QDebug>
 #include <QDir>
 #include <QtGlobal>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
 #include <QSplashScreen>
+#include <QSocketNotifier>
 
 #ifdef LMMS_BUILD_WIN32
+#include <io.h>
+#include <stdio.h>
 #include <windows.h>
+#else
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
+
+namespace lmms
+{
+
+
+namespace gui
+{
+
+GuiApplication* getGUI()
+{
+	return GuiApplication::instance();
+}
+
 
 GuiApplication* GuiApplication::s_instance = nullptr;
 
@@ -58,13 +79,18 @@ GuiApplication* GuiApplication::instance()
 	return s_instance;
 }
 
-GuiApplication* getGUI()
+bool GuiApplication::isWayland()
 {
-	return GuiApplication::instance();
+	return QGuiApplication::platformName().contains("wayland");
 }
+
+
 
 GuiApplication::GuiApplication()
 {
+	// Immediately register our SIGINT handler
+	createSocketNotifier();
+
 	// prompt the user to create the LMMS working directory (e.g. ~/Documents/lmms) if it doesn't exist
 	if ( !ConfigManager::inst()->hasWorkingDir() &&
 		QMessageBox::question( nullptr,
@@ -81,11 +107,11 @@ GuiApplication::GuiApplication()
 	QDir::addSearchPath("artwork", ConfigManager::inst()->defaultThemeDir());
 	QDir::addSearchPath("artwork", ":/artwork");
 
-	LmmsStyle* lmmsstyle = new LmmsStyle();
+	auto lmmsstyle = new LmmsStyle();
 	QApplication::setStyle(lmmsstyle);
 
-	LmmsPalette* lmmspal = new LmmsPalette(nullptr, lmmsstyle);
-	QPalette* lpal = new QPalette(lmmspal->palette());
+	auto lmmspal = new LmmsPalette(nullptr, lmmsstyle);
+	auto lpal = new QPalette(lmmspal->palette());
 
 	QApplication::setPalette( *lpal );
 	LmmsStyle::s_palette = lpal;
@@ -96,6 +122,7 @@ GuiApplication::GuiApplication()
 
 	// Show splash screen
 	QSplashScreen splashScreen( embed::getIconPixmap( "splash" ) );
+	splashScreen.setFixedSize(splashScreen.pixmap().size());
 	splashScreen.show();
 
 	QHBoxLayout layout;
@@ -138,7 +165,7 @@ GuiApplication::GuiApplication()
 	connect(m_songEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
 	displayInitProgress(tr("Preparing mixer"));
-	m_mixerView = new MixerView;
+	m_mixerView = new MixerView(Engine::mixer());
 	connect(m_mixerView, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
 	displayInitProgress(tr("Preparing controller rack"));
@@ -229,23 +256,64 @@ void GuiApplication::childDestroyed(QObject *obj)
 	}
 }
 
+void GuiApplication::sigintHandler(int)
+{
 #ifdef LMMS_BUILD_WIN32
-/*!
- * @brief Returns the Windows System font.
- */
+	char message[] = "Sorry, SIGINT is unhandled on this platform\n";
+	std::ignore = _write(_fileno(stderr), message, sizeof(message));
+#else
+	char a = 1;
+	std::ignore = ::write(s_sigintFd[0], &a, sizeof(a));
+#endif
+}
+
+// Create our unix signal notifiers
+void GuiApplication::createSocketNotifier()
+{
+#ifdef LMMS_BUILD_WIN32
+	// no-op
+#else
+	if (::socketpair(AF_UNIX, SOCK_STREAM, 0, s_sigintFd))
+	{
+		qFatal("Couldn't create SIGINT socketpair");
+		return;
+	}
+
+	// Listen on the file descriptor for SIGINT
+	m_sigintNotifier = new QSocketNotifier(s_sigintFd[1], QSocketNotifier::Read, this);
+	connect(m_sigintNotifier, SIGNAL(activated(QSocketDescriptor)), this, SLOT(sigintOccurred()), Qt::QueuedConnection);
+#endif
+}
+
+// Handle the shutdown event
+void GuiApplication::sigintOccurred()
+{
+	m_sigintNotifier->setEnabled(false);
+	qDebug() << "Shutting down...";
+	// cleanup, etc
+	qApp->exit(3);
+	m_sigintNotifier->setEnabled(true);
+}
+
+#ifdef LMMS_BUILD_WIN32
 QFont GuiApplication::getWin32SystemFont()
 {
-	NONCLIENTMETRICS metrics = { sizeof( NONCLIENTMETRICS ) };
-	SystemParametersInfo( SPI_GETNONCLIENTMETRICS, sizeof( NONCLIENTMETRICS ), &metrics, 0 );
-	int pointSize = metrics.lfMessageFont.lfHeight;
+	auto metrics = NONCLIENTMETRICSW{ .cbSize = sizeof(NONCLIENTMETRICSW) };
+	SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICSW), &metrics, 0);
+	int pointSize = static_cast<int>(metrics.lfMessageFont.lfHeight);
 	if ( pointSize < 0 )
 	{
 		// height is in pixels, convert to points
 		HDC hDC = GetDC( nullptr );
-		pointSize = MulDiv( abs( pointSize ), 72, GetDeviceCaps( hDC, LOGPIXELSY ) );
+		pointSize = MulDiv(std::abs(pointSize), 72, GetDeviceCaps(hDC, LOGPIXELSY));
 		ReleaseDC( nullptr, hDC );
 	}
 
-	return QFont( QString::fromUtf8( metrics.lfMessageFont.lfFaceName ), pointSize );
+	return QFont{QString::fromWCharArray(metrics.lfMessageFont.lfFaceName), pointSize};
 }
 #endif
+
+
+} // namespace gui
+
+} // namespace lmms

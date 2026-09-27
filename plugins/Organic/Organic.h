@@ -22,9 +22,8 @@
  *
  */
 
-
-#ifndef ORGANIC_H
-#define ORGANIC_H
+#ifndef LMMS_ORGANIC_H
+#define LMMS_ORGANIC_H
 
 #include <QString>
 
@@ -32,12 +31,20 @@
 #include "InstrumentView.h"
 #include "AutomatableModel.h"
 
-class QPixmap;
 
-class Knob;
-class NotePlayHandle;
+namespace lmms
+{
+
+
+class NotePlayHandle;  // IWYU pragma: keep
 class Oscillator;
+
+namespace gui
+{
+class Knob;
 class PixmapButton;
+class OrganicInstrumentView;
+} // namespace gui
 
 const int NUM_OSCILLATORS = 8;
 const int NUM_HARMONICS = 18;
@@ -76,7 +83,6 @@ const float CENT = 1.0f / 1200.0f;
 class OscillatorObject : public Model
 {
 	Q_OBJECT
-	MM_OPERATORS
 private:
 	int m_numOscillators;
 	IntModel m_waveShape;
@@ -96,10 +102,10 @@ private:
 	float m_phaseOffsetRight;
 
 	OscillatorObject( Model * _parent, int _index );
-	virtual ~OscillatorObject();
+	~OscillatorObject() override = default;
 
 	friend class OrganicInstrument;
-	friend class OrganicInstrumentView;
+	friend class gui::OrganicInstrumentView;
 
 
 private slots:
@@ -115,19 +121,17 @@ class OrganicInstrument : public Instrument
 	Q_OBJECT
 public:
 	OrganicInstrument( InstrumentTrack * _instrument_track );
-	virtual ~OrganicInstrument();
+	~OrganicInstrument() override;
 
-	virtual void playNote( NotePlayHandle * _n,
-						sampleFrame * _working_buffer );
-	virtual void deleteNotePluginData( NotePlayHandle * _n );
+	void playNote( NotePlayHandle * _n,
+						SampleFrame* _working_buffer ) override;
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 
-	virtual void saveSettings( QDomDocument & _doc, QDomElement & _parent );
-	virtual void loadSettings( const QDomElement & _this );
+	void saveSettings(QDomDocument& doc, QDomElement& elem) override;
+	void loadSettings(const QDomElement& elem) override;
 
-	virtual QString nodeName() const;
-
-	int intRand( int min, int max );
+	QString nodeName() const override;
 
 	static float * s_harmonics;
 
@@ -151,7 +155,6 @@ private:
 
 	struct oscPtr
 	{
-		MM_OPERATORS
 		Oscillator * oscLeft;
 		Oscillator * oscRight;
 		float phaseOffsetLeft[NUM_OSCILLATORS];
@@ -163,14 +166,17 @@ private:
 	FloatModel  m_fx1Model;
 	FloatModel  m_volModel;
 
-	virtual PluginView * instantiateView( QWidget * _parent );
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 
 private slots:
 	void updateAllDetuning();
 
-	friend class OrganicInstrumentView;
+	friend class gui::OrganicInstrumentView;
 } ;
+
+namespace gui
+{
 
 
 class OrganicInstrumentView : public InstrumentViewFixedSize
@@ -178,14 +184,13 @@ class OrganicInstrumentView : public InstrumentViewFixedSize
 	Q_OBJECT
 public:
 	OrganicInstrumentView( Instrument * _instrument, QWidget * _parent );
-	virtual ~OrganicInstrumentView();
+	~OrganicInstrumentView() override;
 
 private:
-	virtual void modelChanged();
+	void modelChanged() override;
 
 	struct OscillatorKnobs
 	{
-		MM_OPERATORS
 		OscillatorKnobs( 
 					Knob * h,
 					Knob * v,
@@ -199,9 +204,7 @@ private:
 			m_detuneKnob( dt )
 		{
 		}
-		OscillatorKnobs()
-		{
-		}
+		OscillatorKnobs() = default;
 
 		Knob * m_harmKnob;
 		Knob * m_volKnob;
@@ -218,11 +221,14 @@ private:
 
 	int m_numOscillators;
 
-	static QPixmap * s_artwork;
 	
 protected slots:
 	void updateKnobHint();
 };
 
 
-#endif
+} // namespace gui
+
+} // namespace lmms
+
+#endif // LMMS_ORGANIC_H

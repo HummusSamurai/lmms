@@ -22,14 +22,20 @@
  *
  */
 
-#ifndef DUMMY_EFFECT_H
-#define DUMMY_EFFECT_H
+#ifndef LMMS_DUMMY_EFFECT_H
+#define LMMS_DUMMY_EFFECT_H
 
 #include <QDomElement>
 
 #include "Effect.h"
 #include "EffectControls.h"
 #include "EffectControlDialog.h"
+
+namespace lmms
+{
+
+namespace gui
+{
 
 class Knob;
 
@@ -44,6 +50,7 @@ public:
 
 } ;
 
+} // namespace gui
 
 class DummyEffectControls : public EffectControls
 {
@@ -53,9 +60,7 @@ public:
 	{
 	}
 
-	virtual ~DummyEffectControls()
-	{
-	}
+	~DummyEffectControls() override = default;
 
 	int controlCount() override
 	{
@@ -75,9 +80,9 @@ public:
 		return "DummyControls";
 	}
 
-	EffectControlDialog * createView() override
+	gui::EffectControlDialog * createView() override
 	{
-		return new DummyEffectControlDialog( this );
+		return new gui::DummyEffectControlDialog( this );
 	}
 } ;
 
@@ -93,20 +98,19 @@ public:
 		m_originalPluginData( originalPluginData )
 	{
 		setName();
+		setDontRun(true);
 	}
 
-	virtual ~DummyEffect()
-	{
-	}
+	~DummyEffect() override = default;
 
 	EffectControls * controls() override
 	{
 		return &m_controls;
 	}
 
-	bool processAudioBuffer( sampleFrame *, const fpp_t ) override
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override
 	{
-		return false;
+		return ProcessStatus::Sleep;
 	}
 
 	const QDomElement& originalPluginData() const
@@ -144,4 +148,6 @@ private:
 } ;
 
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_DUMMY_EFFECT_H

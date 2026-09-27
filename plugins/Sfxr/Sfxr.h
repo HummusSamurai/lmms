@@ -28,16 +28,21 @@
 #ifndef SFXR_H
 #define SFXR_H
 
+#include <array>
+
 #include "AutomatableModel.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
-#include "MemoryManager.h"
 
-
-enum SfxrWaves
+namespace lmms
 {
-	SQR_WAVE, SAW_WAVE, SINE_WAVE, NOISE_WAVE, WAVES_NUM
+
+
+enum class SfxrWave
+{
+	Square, Saw, Sine, Noise, Count
 };
+constexpr auto NumSfxrWaves = static_cast<std::size_t>(SfxrWave::Count);
 
 const int WAVEFORM_BASE_X = 20;
 const int WAVEFORM_BASE_Y = 15;
@@ -60,23 +65,26 @@ const int KNOB_BLOCK_SIZE_Y = 40;
 
 
 
+class SfxrInstrument;
 
-class automatableButtonGroup;
+namespace gui
+{
+class AutomatableButtonGroup;
 class Knob;
 class PixmapButton;
-class SfxrInstrument;
+class SfxrInstrumentView;
+}
 
 
 
 class SfxrSynth
 {
-	MM_OPERATORS
 public:
 	SfxrSynth( const SfxrInstrument * s );
-	virtual ~SfxrSynth();
+	virtual ~SfxrSynth() = default;
 
 	void resetSample( bool restart );
-	void update( sampleFrame * buffer, const int32_t frameNum );
+	void update( SampleFrame* buffer, const int32_t frameNum );
 
 	bool isPlaying() const;
 
@@ -98,7 +106,7 @@ private:
 	float fphase;
 	float fdphase;
 	int iphase;
-	float phaser_buffer[1024];
+	std::array<float, 1024> phaser_buffer;
 	int ipp;
 	float noise_buffer[32];
 	float fltp;
@@ -129,11 +137,11 @@ class SfxrZeroToOneFloatModel : public FloatModel
 {
 public:
 	SfxrZeroToOneFloatModel( float val, Model * parent, const QString& displayName ):
-		FloatModel( val, 0.0, 1.0, 0.001, parent, displayName )
+		FloatModel(val, 0.f, 1.f, 0.001f, parent, displayName)
 	{
 	}
 	/* purpose: prevent the initial value of the model from being changed */
-	virtual void loadSettings( const QDomElement& element, const QString& name = QString( "value" ) )
+	void loadSettings( const QDomElement& element, const QString& name = QString( "value" ) ) override
 	{
 		float oldInitValue = initValue();
 		FloatModel::loadSettings(element, name);
@@ -150,11 +158,11 @@ class SfxrNegPosOneFloatModel : public FloatModel
 {
 public:
 	SfxrNegPosOneFloatModel(float val, Model * parent, const QString& displayName ):
-		FloatModel( val, -1.0, 1.0, 0.001, parent, displayName )
+		FloatModel(val, -1.f, 1.f, 0.001f, parent, displayName)
 	{
 	}
 	/* purpose: prevent the initial value of the model from being changed */
-	virtual void loadSettings( const QDomElement& element, const QString& name = QString( "value" ) )
+	void loadSettings( const QDomElement& element, const QString& name = QString( "value" ) ) override
 	{
 		float oldInitValue = initValue();
 		FloatModel::loadSettings(element, name);
@@ -169,18 +177,18 @@ class SfxrInstrument : public Instrument
 	Q_OBJECT
 public:
 	SfxrInstrument(InstrumentTrack * _instrument_track );
-	virtual ~SfxrInstrument();
+	~SfxrInstrument() override = default;
 
-	virtual void playNote( NotePlayHandle * _n, sampleFrame * _working_buffer );
-	virtual void deleteNotePluginData( NotePlayHandle * _n );
+	void playNote( NotePlayHandle * _n, SampleFrame* _working_buffer ) override;
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
-	virtual void saveSettings( QDomDocument & _doc,
-							QDomElement & _parent );
-	virtual void loadSettings( const QDomElement & _this );
+	void saveSettings( QDomDocument & _doc,
+							QDomElement & _parent ) override;
+	void loadSettings( const QDomElement & _this ) override;
 
-	virtual QString nodeName() const;
+	QString nodeName() const override;
 
-	virtual PluginView * instantiateView( QWidget * _parent );
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 	void resetModels();
 
@@ -217,10 +225,13 @@ private:
 
 	IntModel m_waveFormModel;
 
-	friend class SfxrInstrumentView;
+	friend class gui::SfxrInstrumentView;
 	friend class SfxrSynth;
 };
 
+
+namespace gui
+{
 
 
 class SfxrInstrumentView : public InstrumentViewFixedSize
@@ -230,7 +241,7 @@ public:
 	SfxrInstrumentView( Instrument * _instrument,
 					QWidget * _parent );
 
-	virtual ~SfxrInstrumentView() {};
+	~SfxrInstrumentView() override = default;
 
 protected slots:
 	void genPickup();
@@ -246,7 +257,7 @@ protected slots:
 	void previewSound();
 
 private:
-	virtual void modelChanged();
+	void modelChanged() override;
 
 	Knob * m_attKnob; //Attack Time
 	Knob * m_holdKnob; //Sustain Time
@@ -277,7 +288,7 @@ private:
 	Knob * m_hpFilCutKnob; //HP Filter Cutoff
 	Knob * m_hpFilCutSweepKnob; //HP Filter Cutoff Sweep
 
-	automatableButtonGroup * m_waveBtnGroup;
+	AutomatableButtonGroup * m_waveBtnGroup;
 	PixmapButton * m_sqrWaveBtn; //NOTE: This button has Square Duty
 								//and Square Speed configurable
 	PixmapButton * m_sawWaveBtn;
@@ -300,5 +311,8 @@ private:
 };
 
 
+} // namespace gui
+
+} // namespace lmms
 
 #endif

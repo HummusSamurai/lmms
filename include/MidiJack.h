@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef MIDIJACK_H
-#define MIDIJACK_H
+#ifndef LMMS_MIDI_JACK_H
+#define LMMS_MIDI_JACK_H
 
 #include "lmmsconfig.h"
 
@@ -32,24 +32,27 @@
 #include <jack/jack.h>
 #include <jack/midiport.h>
 #else
-#include "weak_libjack.h"
+#include <weak_libjack.h>
 #endif
 
 #include <QThread>
 
 #include "MidiClient.h"
 
+
+namespace lmms
+{
+
 constexpr size_t JACK_MIDI_BUFFER_MAX = 64; /* events */
 
 class AudioJack;
-class QLineEdit;
 
 class MidiJack : public QThread, public MidiClientRaw
 {
         Q_OBJECT
 public:
 	MidiJack();
-	virtual ~MidiJack();
+	~MidiJack() override;
 
 	jack_client_t* jackClient();
 
@@ -72,8 +75,8 @@ public:
 
 
 protected:
-	virtual void sendByte( const unsigned char c );
-	virtual void run();
+	void sendByte( const unsigned char c ) override;
+	void run() override;
 
 
 private:
@@ -93,6 +96,9 @@ private:
 
 };
 
+
+} // namespace lmms
+
 #endif // LMMS_HAVE_JACK
 
-#endif // MIDIJACK_H
+#endif // LMMS_MIDI_JACK_H

@@ -27,6 +27,9 @@
 #include "AutomationClip.h"
 
 
+namespace lmms
+{
+
 // Dummy constructor for the QMap
 AutomationNode::AutomationNode() :
 	m_clip(nullptr),
@@ -34,7 +37,8 @@ AutomationNode::AutomationNode() :
 	m_inValue(0),
 	m_outValue(0),
 	m_inTangent(0),
-	m_outTangent(0)
+	m_outTangent(0),
+	m_lockedTangents(false)
 {
 }
 
@@ -44,7 +48,8 @@ AutomationNode::AutomationNode(AutomationClip* clip, float value, int pos) :
 	m_inValue(value),
 	m_outValue(value),
 	m_inTangent(0),
-	m_outTangent(0)
+	m_outTangent(0),
+	m_lockedTangents(false)
 {
 }
 
@@ -54,14 +59,11 @@ AutomationNode::AutomationNode(AutomationClip* clip, float inValue, float outVal
 	m_inValue(inValue),
 	m_outValue(outValue),
 	m_inTangent(0),
-	m_outTangent(0)
+	m_outTangent(0),
+	m_lockedTangents(false)
 {
 }
 
-/**
- * @brief Sets the inValue of an automation node
- * @param Float value to be assigned
-*/
 void AutomationNode::setInValue(float value)
 {
 	m_inValue = value;
@@ -78,10 +80,6 @@ void AutomationNode::setInValue(float value)
 	m_clip->generateTangents(it, 3);
 }
 
-/**
- * @brief Sets the outValue of an automation node
- * @param Float value to be assigned
-*/
 void AutomationNode::setOutValue(float value)
 {
 	m_outValue = value;
@@ -98,12 +96,11 @@ void AutomationNode::setOutValue(float value)
 	m_clip->generateTangents(it, 3);
 }
 
-/**
- * @brief Resets the outValue so it matches inValue
-*/
 void AutomationNode::resetOutValue()
 {
 	// Calls setOutValue so it also takes care of generating
 	// the tangents
 	setOutValue(m_inValue);
 }
+
+} // namespace lmms

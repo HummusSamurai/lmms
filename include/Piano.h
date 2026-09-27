@@ -22,11 +22,17 @@
  *
  */
 
-#ifndef PIANO_H
-#define PIANO_H
+#ifndef LMMS_PIANO_H
+#define LMMS_PIANO_H
 
-#include "Note.h"
+#include <array>
+
 #include "Model.h"
+#include "Note.h"
+
+namespace lmms
+{
+
 
 class InstrumentTrack;
 class MidiEventProcessor;
@@ -34,23 +40,38 @@ class MidiEventProcessor;
 class Piano final : public Model
 {
 public:
-	enum KeyTypes
+	enum class KeyType
 	{
-		WhiteKey,
-		BlackKey
+		White,
+		Black
 	} ;
 
-	Piano( InstrumentTrack* track );
+	//! @brief Create a new keyboard display
+	//!
+	//! @param track The InstrumentTrack window to attach to
+	Piano(InstrumentTrack* track);
 
-	void setKeyState( int key, bool state );
+	//! @brief Turn a key on or off
+	//!
+	//! @param key the key number to change
+	//! @param state the state to set the key to
+	void setKeyState(int key, bool state);
 
-	bool isKeyPressed( int key ) const
+	bool isKeyPressed(int key) const
 	{
 		return m_pressedKeys[key];
 	}
 
-	void handleKeyPress( int key, int midiVelocity = -1 );
-	void handleKeyRelease( int key );
+	//! @brief Handle a note being pressed on our keyboard display
+	//!
+	//! @param key the key being pressed
+	//! @param midiVelocity An optional MIDI velocity override
+	void handleKeyPress(int key, int midiVelocity = -1);
+
+	//! @brief Handle a note being released on our keyboard display
+	//!
+	//! @param key the key being releassed
+	void handleKeyRelease(int key);
 
 	InstrumentTrack* instrumentTrack() const
 	{
@@ -71,16 +92,18 @@ public:
 	static const unsigned int NumBlackKeys = 53;
 
 private:
-	static bool isValidKey( int key )
+	static bool isValidKey(int key)
 	{
 		return key >= 0 && key < NumKeys;
 	}
 
 	InstrumentTrack* m_instrumentTrack;
 	MidiEventProcessor* m_midiEvProc;
-	bool m_pressedKeys[NumKeys];
+	std::array<bool, NumKeys> m_pressedKeys = {};
 
 } ;
 
-#endif
 
+} // namespace lmms
+
+#endif // LMMS_PIANO_H

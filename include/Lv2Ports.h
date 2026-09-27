@@ -22,8 +22,8 @@
  *
  */
 
-#ifndef LV2PORTS_H
-#define LV2PORTS_H
+#ifndef LMMS_LV2PORTS_H
+#define LMMS_LV2PORTS_H
 
 #include "lmmsconfig.h"
 
@@ -33,11 +33,18 @@
 #include <memory>
 #include <vector>
 
-#include "lmms_basics.h"
+#include "Flags.h"
+#include "LmmsTypes.h"
 #include "PluginIssue.h"
 
+
+namespace lmms
+{
+
+class SampleFrame;
+
 struct ConnectPortVisitor;
-typedef struct LV2_Evbuf_Impl LV2_Evbuf;
+using LV2_Evbuf = struct LV2_Evbuf_Impl;
 
 namespace Lv2Ports {
 
@@ -87,7 +94,7 @@ struct ConstVisitor
 	virtual void visit(const Lv2Ports::AtomSeq& ) {}
 	virtual void visit(const Lv2Ports::Unknown& ) {}
 
-	virtual ~ConstVisitor();
+	virtual ~ConstVisitor() = default;
 };
 
 struct Visitor
@@ -99,7 +106,7 @@ struct Visitor
 	virtual void visit(Lv2Ports::AtomSeq& ) {}
 	virtual void visit(Lv2Ports::Unknown& ) {}
 
-	virtual ~Visitor();
+	virtual ~Visitor() = default;
 };
 
 struct Meta
@@ -134,7 +141,7 @@ struct PortBase : public Meta
 	QString name() const;
 	QString uri() const;
 
-	virtual ~PortBase();
+	virtual ~PortBase() = default;
 };
 
 template<typename Derived, typename Base>
@@ -176,18 +183,23 @@ struct Audio : public VisitablePort<Audio, PortBase>
 {
 	Audio(std::size_t bufferSize, bool isSidechain);
 
-	//! Copy buffer passed by LMMS into our ports
+	//! @brief Copy buffer passed by LMMS into our ports
+	//! @param lmmsBuf The buffer to copy from
 	//! @param channel channel index into each sample frame
-	void copyBuffersFromCore(const sampleFrame *lmmsBuf,
-		unsigned channel, fpp_t frames);
-	//! Add buffer passed by LMMS into our ports, and halve the result
+	//! @param frames The length of the buffer @p lmmsBuf
+	void copyBuffersFromCore(const SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames);
+
+	//! @brief Add buffer passed by LMMS into our ports, and halve the result
+	//! @param lmmsBuf The buffer to average from
 	//! @param channel channel index into each sample frame
-	void averageWithBuffersFromCore(const sampleFrame *lmmsBuf,
-		unsigned channel, fpp_t frames);
-	//! Copy our ports into buffers passed by LMMS
+	//! @param frames The length of the buffer @p lmmsBuf
+	void averageWithBuffersFromCore(const SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames);
+
+	//! @brief Copy our ports into buffers passed by LMMS
+	//! @param lmmsBuf The buffer to copy into
 	//! @param channel channel index into each sample frame
-	void copyBuffersToCore(sampleFrame *lmmsBuf,
-		unsigned channel, fpp_t frames) const;
+	//! @param frames The length of the buffer @p lmmsBuf
+	void copyBuffersToCore(SampleFrame* lmmsBuf, unsigned channel, f_cnt_t frames) const;
 
 	bool isSideChain() const { return m_sidechain; }
 	bool isOptional() const { return m_optional; }
@@ -195,22 +207,21 @@ struct Audio : public VisitablePort<Audio, PortBase>
 	std::size_t bufferSize() const { return m_buffer.size(); }
 
 private:
-	//! the buffer where Lv2 reads/writes the data from/to
-	std::vector<float> m_buffer;
+	std::vector<float> m_buffer; //!< The buffer where Lv2 reads/writes the data from/to
 	bool m_sidechain;
 
 	// the only case when data of m_buffer may be referenced:
-	friend struct ::ConnectPortVisitor;
+	friend struct lmms::ConnectPortVisitor;
 };
 
 struct AtomSeq : public VisitablePort<AtomSeq, PortBase>
 {
-	enum FlagType
+	enum class FlagType
 	{
 		None = 0,
 		Midi = 1
 	};
-	unsigned flags = FlagType::None;
+	Flags<FlagType> flags = FlagType::None;
 
 	struct Lv2EvbufDeleter
 	{
@@ -261,5 +272,9 @@ const Target* dcast(const PortBase* base)
 
 } // namespace Lv2Ports
 
+
+} // namespace lmms
+
 #endif // LMMS_HAVE_LV2
-#endif // LV2PORTS_H
+
+#endif // LMMS_LV2PORTS_H

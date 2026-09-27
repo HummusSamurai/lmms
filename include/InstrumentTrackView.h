@@ -22,17 +22,22 @@
  *
  */
 
-#ifndef INSTRUMENT_TRACK_VIEW_H
-#define INSTRUMENT_TRACK_VIEW_H
+#ifndef LMMS_GUI_INSTRUMENT_TRACK_VIEW_H
+#define LMMS_GUI_INSTRUMENT_TRACK_VIEW_H
 
 #include "TrackView.h"
 
 #include "InstrumentTrack.h"
 
 
+namespace lmms::gui
+{
+
+
 class InstrumentTrackWindow;
 class Knob;
 class MidiCCRackView;
+class MixerChannelLcdSpinBox;
 class TrackContainerView;
 class TrackLabelButton;
 
@@ -42,7 +47,7 @@ class InstrumentTrackView : public TrackView
 	Q_OBJECT
 public:
 	InstrumentTrackView( InstrumentTrack * _it, TrackContainerView* tc );
-	virtual ~InstrumentTrackView();
+	~InstrumentTrackView() override;
 
 	InstrumentTrackWindow * getInstrumentTrackWindow();
 
@@ -68,11 +73,13 @@ public:
 
 
 protected:
+	void modelChanged() override;
 	void dragEnterEvent( QDragEnterEvent * _dee ) override;
 	void dropEvent( QDropEvent * _de ) override;
 
 
 private slots:
+	void onInstrumentChanged();
 	void toggleInstrumentWindow( bool _on );
 	void toggleMidiCCRack();
 	void activityIndicatorPressed();
@@ -82,17 +89,25 @@ private slots:
 	void midiOutSelected();
 	void midiConfigChanged();
 
-	void assignMixerLine( int channelIndex );
+	//! @brief Assign a specific mixer Channel for this track
+	void assignMixerLine(int channelIndex);
+
+	//! @brief Create and assign a new mixer Channel for this track
 	void createMixerLine();
 
 	void handleConfigChange(QString cls, QString attr, QString value);
+	
+	void corruptStateUpdate();
 
+private:
+	static QPixmap determinePixmap(InstrumentTrack* instrumentTrack);
 
 private:
 	InstrumentTrackWindow * m_window;
 
 	// widgets in track-settings-widget
 	TrackLabelButton * m_tlb;
+	MixerChannelLcdSpinBox* m_mixerChannelNumber;
 	Knob * m_volumeKnob;
 	Knob * m_panningKnob;
 	FadeButton * m_activityIndicator;
@@ -114,5 +129,7 @@ private:
 	friend class InstrumentTrackWindow;
 } ;
 
-#endif
 
+} // namespace lmms::gui
+
+#endif // LMMS_GUI_INSTRUMENT_TRACK_VIEW_H

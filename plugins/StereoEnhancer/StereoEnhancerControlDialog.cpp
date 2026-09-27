@@ -26,23 +26,23 @@
 
 
 #include "StereoEnhancerControlDialog.h"
-
 #include <QHBoxLayout>
-
 #include "Knob.h"
 #include "StereoEnhancerControls.h"
 
+namespace lmms::gui
+{
 
 
 StereoEnhancerControlDialog::StereoEnhancerControlDialog(
 	StereoEnhancerControls * _controls ) :
 	EffectControlDialog( _controls )
 {
-	QHBoxLayout * l = new QHBoxLayout( this );
+	auto l = new QHBoxLayout(this);
+	l->setSizeConstraint(QLayout::SetFixedSize);
 
-	Knob * widthKnob = new Knob( knobBright_26, this );
+	auto widthKnob = new Knob(KnobType::Bright26, tr("WIDTH"), this);
 	widthKnob->setModel( &_controls->m_widthModel );
-	widthKnob->setLabel( tr( "WIDTH" ) );
 	widthKnob->setHintText( tr( "Width:" ) , " samples" );
 
 	l->addWidget( widthKnob );
@@ -50,3 +50,5 @@ StereoEnhancerControlDialog::StereoEnhancerControlDialog(
 	this->setLayout(l);
 }
 
+
+} // namespace lmms::gui

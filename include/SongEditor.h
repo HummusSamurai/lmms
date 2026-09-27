@@ -23,10 +23,8 @@
  *
  */
 
-
-#ifndef SONG_EDITOR_H
-#define SONG_EDITOR_H
-
+#ifndef LMMS_GUI_SONG_EDITOR_H
+#define LMMS_GUI_SONG_EDITOR_H
 
 #include "Editor.h"
 #include "TrackContainerView.h"
@@ -34,14 +32,23 @@
 class QLabel;
 class QScrollBar;
 
+namespace lmms
+{
+
+class IntModel;
+class Song;
+class ComboBoxModel;
+
+namespace gui
+{
+
+
 class ActionGroup;
 class AutomatableSlider;
 class ComboBox;
-class ComboBoxModel;
 class LcdSpinBox;
 class MeterDialog;
 class PositionLine;
-class Song;
 class TextFloat;
 class TimeLineWidget;
 
@@ -50,23 +57,28 @@ class SongEditor : public TrackContainerView
 {
 	Q_OBJECT
 public:
-	enum EditMode
+	enum class EditMode
 	{
-		DrawMode,
-		KnifeMode,
-		SelectMode
+		Draw,
+		Knife,
+		Select
 	};
 
 	SongEditor( Song * song );
-	~SongEditor();
+	~SongEditor() override;
 
 	void saveSettings( QDomDocument& doc, QDomElement& element ) override;
 	void loadSettings( const QDomElement& element ) override;
 
-	ComboBoxModel *zoomingModel() const;
-	ComboBoxModel *snappingModel() const;
+	ComboBoxModel* snappingModel() const;
+
+	//! @brief Return grid size as number of bars
 	float getSnapSize() const;
+
 	QString getSnapSizeString() const;
+
+	TimeLineWidget* timeLine() const { return m_timeLine; }
+	PositionLine* positionLine() const { return m_positionLine; }
 
 public slots:
 	void scrolled( int new_pos );
@@ -74,25 +86,22 @@ public slots:
 	void stopSelectRegion();
 	void updateRubberband();
 
-	void setEditMode( EditMode mode );
+	void setEditMode( lmms::gui::SongEditor::EditMode mode );
 	void setEditModeDraw();
 	void setEditModeKnife();
 	void setEditModeSelect();
 	void toggleProportionalSnap();
 
-	void updatePosition( const TimePos & t );
+	void updatePosition();
 	void updatePositionLine();
 	void selectAllClips( bool select );
 
 protected:
-	void closeEvent( QCloseEvent * ce ) override;
 	void mousePressEvent(QMouseEvent * me) override;
 	void mouseMoveEvent(QMouseEvent * me) override;
 	void mouseReleaseEvent(QMouseEvent * me) override;
 
 private slots:
-	void setHighQuality( bool );
-
 	void setMasterVolume( int new_val );
 	void showMasterVolumeFloat();
 	void updateMasterVolumeFloat( int new_val );
@@ -114,17 +123,25 @@ private:
 	bool allowRubberband() const override;
 	bool knifeMode() const override;
 
+	//! @brief Convert zoom slider's value to bar width in pixels
+	int calculatePixelsPerBar() const;
+
+	//! @brief Convert bar width in pixels to zoom slider value
+	int calculateZoomSliderValue(int pixelsPerBar) const;
+
 	int trackIndexFromSelectionPoint(int yPos);
 	int indexOfTrackView(const TrackView* tv);
-
 
 	Song * m_song;
 
 	QScrollBar * m_leftRightScroll;
 
+	void adjustLeftRightScoll(int value);
+
 	LcdSpinBox * m_tempoSpinBox;
 
-	TimeLineWidget * m_timeLine;
+	TimeLineWidget* m_timeLine;
+	PositionLine* m_positionLine;
 
 	MeterDialog * m_timeSigDisplay;
 	AutomatableSlider * m_masterVolumeSlider;
@@ -133,33 +150,31 @@ private:
 	TextFloat * m_mvsStatus;
 	TextFloat * m_mpsStatus;
 
-	PositionLine * m_positionLine;
 
-	ComboBoxModel* m_zoomingModel;
+	IntModel* m_zoomingModel;
 	ComboBoxModel* m_snappingModel;
 	bool m_proportionalSnap;
-
-	static const QVector<float> m_zoomLevels;
 
 	bool m_scrollBack;
 	bool m_smoothScroll;
 
 	EditMode m_mode;
-	EditMode m_ctrlMode; // mode they were in before they hit ctrl
+	EditMode m_ctrlMode; //!< Mode they were in before they hit ctrl
 
 	QPoint m_origin;
 	QPoint m_scrollPos;
 	QPoint m_mousePos;
 	int m_rubberBandStartTrackview;
 	TimePos m_rubberbandStartTimePos;
-	int m_currentZoomingValue;
+	int m_rubberbandPixelsPerBar; //!< Pixels per bar when selection starts
 	int m_trackHeadWidth;
 	bool m_selectRegion;
 
 	friend class SongEditorWindow;
 
 signals:
-	void zoomingValueChanged( float );
+	void pixelsPerBarChanged(float);
+	void proportionalSnapChanged();
 } ;
 
 
@@ -207,7 +222,7 @@ private:
 	QAction* m_selectModeAction;
 	QAction* m_crtlAction;
 
-	ComboBox * m_zoomingComboBox;
+	AutomatableSlider * m_zoomingSlider;
 	ComboBox * m_snappingComboBox;
 	QLabel* m_snapSizeLabel;
 
@@ -215,4 +230,8 @@ private:
 	QAction* m_removeBarAction;
 };
 
-#endif
+} // namespace gui
+
+} // namespace lmms
+
+#endif // LMMS_GUI_SONG_EDITOR_H

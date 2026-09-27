@@ -22,13 +22,19 @@
  *
  */
 
-
-#ifndef PATTERN_STORE_H
-#define PATTERN_STORE_H
+#ifndef LMMS_PATTERN_STORE_H
+#define LMMS_PATTERN_STORE_H
 
 #include "TrackContainer.h"
 #include "ComboBoxModel.h"
 
+namespace lmms
+{
+
+namespace gui
+{
+	class PatternEditorWindow;
+}
 
 /*
  * PatternStore is the backend of Pattern Editor:
@@ -61,9 +67,9 @@ class LMMS_EXPORT PatternStore : public TrackContainer
 	mapPropertyFromModel(int, currentPattern, setCurrentPattern, m_patternComboBoxModel);
 public:
 	PatternStore();
-	virtual ~PatternStore();
+	~PatternStore() override = default;
 
-	virtual bool play(TimePos start, const fpp_t frames, const f_cnt_t frameBase, int clipNum = -1);
+	virtual bool play(TimePos start, const f_cnt_t frames, const f_cnt_t frameBase, int clipNum = -1);
 
 	void updateAfterTrackAdd() override;
 
@@ -92,17 +98,20 @@ public slots:
 	void play();
 	void stop();
 	void updateComboBox();
-	void currentPatternChanged();
 
+signals:
+	void trackUpdated();
 
 private:
 	ComboBoxModel m_patternComboBoxModel;
 
 
 	// Where the pattern selection combo box is
-	friend class PatternEditorWindow;
+	friend class gui::PatternEditorWindow;
 
 } ;
 
 
-#endif
+} // namespace lmms
+
+#endif // LMMS_PATTERN_STORE_H

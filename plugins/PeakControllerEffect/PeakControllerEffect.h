@@ -29,6 +29,10 @@
 #include "Effect.h"
 #include "PeakControllerEffectControls.h"
 
+namespace lmms
+{
+
+
 class PeakController;
 
 class PeakControllerEffect : public Effect
@@ -36,9 +40,9 @@ class PeakControllerEffect : public Effect
 public:
 	PeakControllerEffect( Model * parent, 
 						const Descriptor::SubPluginFeatures::Key * _key );
-	virtual ~PeakControllerEffect();
-	virtual bool processAudioBuffer( sampleFrame * _buf,
-									const fpp_t _frames ) override;
+	~PeakControllerEffect() override;
+
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override;
 
 	EffectControls * controls() override
 	{
@@ -77,5 +81,8 @@ private:
 	friend class PeakControllerEffectControls;
 
 } ;
+
+
+} // namespace lmms
 
 #endif

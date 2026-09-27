@@ -26,28 +26,16 @@
 #ifndef WATSYN_H
 #define WATSYN_H
 
+#include "AudioResampler.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "Graph.h"
 #include "AutomatableModel.h"
 #include "TempoSyncKnob.h"
 #include <samplerate.h>
-#include "MemoryManager.h"
 
-
-#define makeknob( name, x, y, hint, unit, oname ) 		\
-	name = new Knob( knobStyled, this ); 				\
-	name ->move( x, y );								\
-	name ->setHintText( hint, unit );		\
-	name ->setObjectName( oname );						\
-	name ->setFixedSize( 19, 19 );
-
-#define maketsknob( name, x, y, hint, unit, oname ) 		\
-	name = new TempoSyncKnob( knobStyled, this ); 				\
-	name ->move( x, y );								\
-	name ->setHintText( hint, unit );		\
-	name ->setObjectName( oname );						\
-	name ->setFixedSize( 19, 19 );
+namespace lmms
+{
 
 #define A1ROW 26
 #define A2ROW 49
@@ -74,27 +62,31 @@ const int	B1_OSC = 2;
 const int	B2_OSC = 3;
 const int	NUM_OSCS = 4;
 
-class automatableButtonGroup;
-class PixmapButton;
 class WatsynInstrument;
+
+namespace gui
+{
+class AutomatableButtonGroup;
+class PixmapButton;
+class WatsynView;
+}
 
 class WatsynObject
 {
-	MM_OPERATORS
 public:
 	WatsynObject( 	float * _A1wave, float * _A2wave,
 					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, fpp_t _frames,
+					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, f_cnt_t _frames,
 					WatsynInstrument * _w );
 	virtual ~WatsynObject();
 
-	void renderOutput( fpp_t _frames );
+	void renderOutput( f_cnt_t _frames );
 
-	inline sampleFrame * abuf() const
+	inline SampleFrame* abuf() const
 	{
 		return m_abuf;
 	}
-	inline sampleFrame * bbuf() const
+	inline SampleFrame* bbuf() const
 	{
 		return m_bbuf;
 	}
@@ -110,12 +102,12 @@ private:
 	const sample_rate_t m_samplerate;
 	NotePlayHandle * m_nph;
 
-	fpp_t m_fpp;
+	f_cnt_t m_fpp;
 
 	WatsynInstrument * m_parent;
 
-	sampleFrame * m_abuf;
-	sampleFrame * m_bbuf;
+	SampleFrame* m_abuf;
+	SampleFrame* m_bbuf;
 
 	float m_lphase [NUM_OSCS];
 	float m_rphase [NUM_OSCS];
@@ -131,25 +123,25 @@ class WatsynInstrument : public Instrument
 	Q_OBJECT
 public:
 	WatsynInstrument( InstrumentTrack * _instrument_track );
-	virtual ~WatsynInstrument();
+	~WatsynInstrument() override = default;
 
-	virtual void playNote( NotePlayHandle * _n,
-						sampleFrame * _working_buffer );
-	virtual void deleteNotePluginData( NotePlayHandle * _n );
+	void playNote( NotePlayHandle * _n,
+						SampleFrame* _working_buffer ) override;
+	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
 
-	virtual void saveSettings( QDomDocument & _doc,
-							QDomElement & _this );
-	virtual void loadSettings( const QDomElement & _this );
+	void saveSettings( QDomDocument & _doc,
+							QDomElement & _this ) override;
+	void loadSettings( const QDomElement & _this ) override;
 
-	virtual QString nodeName() const;
+	QString nodeName() const override;
 
-	virtual f_cnt_t desiredReleaseFrames() const
+	float desiredReleaseTimeMs() const override
 	{
-		return( 64 );
+		return 1.5f;
 	}
 
-	virtual PluginView * instantiateView( QWidget * _parent );
+	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 public slots:
 	void updateVolumes();
@@ -181,28 +173,23 @@ private:
 	}
 
 	// memcpy utilizing libsamplerate (src) for sinc interpolation
-	inline void srccpy( float * _dst, float * _src )
+	inline void srccpy(float* _dst, float* _src)
 	{
-		int err;
-		const int margin = 64;
-		
-		// copy to temp array
-		float tmps [ GRAPHLEN + margin ]; // temp array in stack
-		float * tmp = &tmps[0];
+		auto srcIndex = f_cnt_t{0};
+		auto dstIndex = f_cnt_t{0};
 
-		memcpy( tmp, _src, sizeof( float ) * GRAPHLEN );
-		memcpy( tmp + GRAPHLEN, _src, sizeof( float ) * margin );
-		SRC_STATE * src_state = src_new( SRC_SINC_FASTEST, 1, &err );
-		SRC_DATA src_data;
-		src_data.data_in = tmp;
-		src_data.input_frames = GRAPHLEN + margin;
-		src_data.data_out = _dst;
-		src_data.output_frames = WAVELEN;
-		src_data.src_ratio = static_cast<double>( WAVERATIO );
-		src_data.end_of_input = 0;
-		err = src_process( src_state, &src_data ); 
-		if( err ) { qDebug( "Watsyn SRC error: %s", src_strerror( err ) ); }
-		src_delete( src_state );
+		m_resampler.reset();
+		m_resampler.setRatio(WAVERATIO);
+
+		while (dstIndex < WAVELEN)
+		{
+			const auto input = InterleavedBufferView<const float, 1>{_src + srcIndex, GRAPHLEN - srcIndex};
+			const auto output = InterleavedBufferView<float, 1>{_dst + dstIndex, WAVELEN - dstIndex};
+			const auto result = m_resampler.process(input, output);
+
+			srcIndex = (srcIndex + result.inputFramesUsed) % GRAPHLEN;
+			dstIndex += result.outputFramesGenerated;
+		}
 	}
 
 	// memcpy utilizing cubic interpolation
@@ -236,6 +223,7 @@ private:
 		}
 	}*/
 
+	AudioResampler m_resampler = AudioResampler{AudioResampler::Mode::SincFastest, 1};
 
 	FloatModel a1_vol;
 	FloatModel a2_vol;
@@ -288,8 +276,12 @@ private:
 	float B2_wave [WAVELEN];
 
 	friend class WatsynObject;
-	friend class WatsynView;
+	friend class gui::WatsynView;
 };
+
+
+namespace gui
+{
 
 
 class WatsynView : public InstrumentViewFixedSize
@@ -298,7 +290,7 @@ class WatsynView : public InstrumentViewFixedSize
 public:
 	WatsynView( Instrument * _instrument,
 					QWidget * _parent );
-	virtual ~WatsynView();
+	~WatsynView() override = default;
 
 protected slots:
 	void updateLayout();
@@ -316,7 +308,19 @@ protected slots:
 	void loadClicked();
 
 private:
-	virtual void modelChanged();
+	void modelChanged() override;
+
+	template<class T = Knob>
+	auto makeKnob(int x, int y, const QString& hint, const QString& unit,
+		const QString& objName) -> T*
+	{
+		T* knob = new T(KnobType::Styled, this);
+		knob->move(x, y);
+		knob->setHintText(hint, unit);
+		knob->setObjectName(objName);
+		knob->setFixedSize(19, 19);
+		return knob;
+	};
 
 // knobs
 	Knob * a1_volKnob;
@@ -354,9 +358,9 @@ private:
 
 	Knob * m_xtalkKnob;
 
-	automatableButtonGroup * m_selectedGraphGroup;
-	automatableButtonGroup * m_aModGroup;
-	automatableButtonGroup * m_bModGroup;
+	AutomatableButtonGroup * m_selectedGraphGroup;
+	AutomatableButtonGroup * m_aModGroup;
+	AutomatableButtonGroup * m_bModGroup;
 
 	Graph * a1_graph;
 	Graph * a2_graph;
@@ -375,5 +379,10 @@ private:
 	PixmapButton * m_loadButton;
 
 };
+
+
+} // namespace gui
+
+} // namespace lmms
 
 #endif
